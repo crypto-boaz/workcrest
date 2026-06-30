@@ -61,6 +61,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "name",
             "sku",
             "barcode",
+            "qr_identifier",
             "category",
             "category_name",
             "unit",
@@ -75,7 +76,31 @@ class ProductSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "version", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "qr_identifier",
+            "version",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_barcode(self, value):
+        value = value.strip()
+        if not value:
+            return ""
+        view = self.context["view"]
+        products = Product.objects.filter(
+            organization=view.organization,
+            location=view.location,
+            barcode=value,
+        )
+        if self.instance is not None:
+            products = products.exclude(id=self.instance.id)
+        if products.exists():
+            raise serializers.ValidationError(
+                "This barcode is already assigned to another product."
+            )
+        return value
 
     def validate_category(self, value):
         view = self.context["view"]
@@ -195,6 +220,8 @@ class SaleItemSerializer(serializers.ModelSerializer):
             "product",
             "product_name",
             "sku",
+            "barcode",
+            "product_qr_identifier",
             "unit",
             "quantity",
             "unit_price",
@@ -226,6 +253,7 @@ class SaleSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "number",
+            "receipt_qr_identifier",
             "customer",
             "customer_name",
             "status",
@@ -240,6 +268,7 @@ class SaleSerializer(serializers.ModelSerializer):
             "payments",
             "created_at",
         ]
+        read_only_fields = ["receipt_qr_identifier"]
 
 
 class CheckoutItemSerializer(serializers.Serializer):

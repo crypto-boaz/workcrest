@@ -12,12 +12,14 @@ import {
   Users,
   WalletCards,
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { useBusinessStore } from "@/components/business-store-provider";
 import { usePlatform } from "@/components/platform-provider";
 import { Button } from "@/components/ui/button";
 import type { Customer, CustomerInput, Sale } from "@/lib/business-types";
+import { commerceApi } from "@/lib/commerce-api";
+import { apiMode } from "@/lib/platform-api";
 import { formatCurrency, formatDate, formatTime } from "@/lib/utils";
 import {
   downloadCsv,
@@ -37,10 +39,68 @@ import {
 
 export function SalesPage() {
   const { state } = useBusinessStore();
-  const { bootstrap } = usePlatform();
+  const { bootstrap, currentLocation } = usePlatform();
   const [query, setQuery] = useState("");
   const [payment, setPayment] = useState("all");
   const [selected, setSelected] = useState<Sale | null>(null);
+
+  useEffect(() => {
+    const receipt = new URLSearchParams(window.location.search).get("receipt");
+    if (!receipt) return;
+    const match = state.sales.find(
+      (sale) =>
+        sale.receiptQrIdentifier === receipt ||
+        sale.sourceId === receipt ||
+        sale.id === receipt,
+    );
+    if (match) {
+      const timer = window.setTimeout(() => setSelected(match), 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (!apiMode) return;
+    const controller = new AbortController();
+    void commerceApi
+      .saleByReceiptQr(currentLocation.id, receipt, controller.signal)
+      .then((sale) =>
+        setSelected({
+          sourceId: sale.id,
+          id: sale.number ?? sale.id ?? "",
+          receiptQrIdentifier: sale.receipt_qr_identifier,
+          customerId: sale.customer ?? undefined,
+          customerName: sale.customer_name ?? "Walk-in customer",
+          items: (sale.items ?? []).map((item) => ({
+            sourceItemId: item.id,
+            productId: item.product ?? "",
+            name: item.product_name ?? "Product",
+            sku: item.sku ?? "",
+            barcode: item.barcode ?? "",
+            productQrIdentifier: item.product_qr_identifier,
+            quantity: Number(item.quantity ?? 0),
+            unitPrice: Number(item.unit_price ?? 0),
+            cost: Number(item.unit_cost ?? 0),
+          })),
+          subtotal: Number(sale.subtotal ?? 0),
+          discount: Number(sale.discount ?? 0),
+          total: Number(sale.total ?? 0),
+          paymentMethod:
+            sale.payments?.[0]?.method === "card"
+              ? "Card"
+              : sale.payments?.[0]?.method === "transfer"
+                ? "Transfer"
+                : "Cash",
+          status:
+            sale.status === "refunded" ||
+            sale.status === "partially_returned"
+              ? "refunded"
+              : "completed",
+          createdAt:
+            sale.completed_at ?? sale.created_at ?? new Date().toISOString(),
+          cashier: sale.cashier_name ?? "Team member",
+        }),
+      )
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [currentLocation.id, state.sales]);
 
   const filtered = useMemo(
     () =>
@@ -245,6 +305,9 @@ export function SalesPage() {
                 <div key={item.productId} className="flex gap-4 py-3 text-xs">
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold">{item.name}</p>
+                    <p className="mt-0.5 text-[10px] text-[var(--muted-foreground)]">
+                      SKU {item.sku} · Barcode {item.barcode || "Nil"}
+                    </p>
                     <p className="mt-0.5 text-[10px] text-[var(--muted-foreground)]">
                       {item.quantity} × {formatCurrency(item.unitPrice)}
                     </p>

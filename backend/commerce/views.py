@@ -1,6 +1,7 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
+from uuid import UUID
 
 from django.db import models, transaction
 from django.db.models import DecimalField, F, Q, Sum, Value
@@ -16,6 +17,7 @@ from rest_framework.views import APIView
 from drf_spectacular.utils import OpenApiTypes, extend_schema
 
 from audit.services import record_audit
+from accounts.permissions import PlatformOwnerOnly
 from config.pagination import SalePagination, TransactionPagination
 from organizations.access import TenantAccessPermission
 from organizations.models import Location
@@ -212,6 +214,7 @@ class ProductViewSet(CommerceViewSet):
 
 
 class CustomerViewSet(CommerceViewSet):
+    permission_classes = [IsAuthenticated, PlatformOwnerOnly]
     serializer_class = CustomerSerializer
     search_fields = ["name", "phone", "email"]
     capability_map = {
@@ -379,6 +382,7 @@ class SaleViewSet(CommerceViewSet):
         "retrieve": "sales.view",
         "create": "sales.checkout",
         "checkout": "sales.checkout",
+        "receipt_lookup": "sales.view",
     }
 
     def get_queryset(self):
@@ -392,6 +396,21 @@ class SaleViewSet(CommerceViewSet):
 
     def create(self, request, *args, **kwargs):
         return self.checkout(request, *args, **kwargs)
+
+    @action(detail=False, methods=["get"], url_path="receipt-lookup")
+    def receipt_lookup(self, request, **kwargs):
+        value = str(request.query_params.get("qr", "")).strip()
+        try:
+            identifier = UUID(value)
+        except ValueError as exc:
+            raise ValidationError(
+                {"qr": "Enter a valid receipt QR identifier."}
+            ) from exc
+        sale = get_object_or_404(
+            self.get_queryset(),
+            receipt_qr_identifier=identifier,
+        )
+        return Response(SaleSerializer(sale, context={"request": request}).data)
 
     @action(detail=False, methods=["post"], url_path="checkout")
     def checkout(self, request, **kwargs):
@@ -490,6 +509,7 @@ class ReturnRecordViewSet(CommerceViewSet):
 
 
 class PurchaseOrderViewSet(CommerceViewSet):
+    permission_classes = [IsAuthenticated, PlatformOwnerOnly]
     serializer_class = PurchaseOrderSerializer
     filterset_fields = ["status", "supplier"]
     search_fields = ["number", "supplier__name"]

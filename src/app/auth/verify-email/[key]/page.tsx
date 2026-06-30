@@ -32,8 +32,10 @@ export default function VerifyEmailPage() {
     const key = decodeURIComponent(rawKey ?? "");
 
     if (!key) {
-      setState("failed");
-      setMessage("This verification link is missing its confirmation key.");
+      queueMicrotask(() => {
+        setState("failed");
+        setMessage("This verification link is missing its confirmation key.");
+      });
       return;
     }
 

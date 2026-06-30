@@ -4,6 +4,8 @@ export interface Product {
   id: string;
   name: string;
   sku: string;
+  barcode?: string;
+  qrIdentifier?: string;
   category: string;
   price: number;
   cost: number;
@@ -29,6 +31,8 @@ export interface SaleItem {
   productId: string;
   name: string;
   sku: string;
+  barcode?: string;
+  productQrIdentifier?: string;
   quantity: number;
   unitPrice: number;
   cost: number;
@@ -40,6 +44,7 @@ export type PaymentMethod = "Cash" | "Card" | "Transfer";
 export interface Sale {
   sourceId?: string;
   id: string;
+  receiptQrIdentifier?: string;
   customerId?: string;
   customerName: string;
   items: SaleItem[];
@@ -182,6 +187,7 @@ export interface CompleteSaleInput {
 export interface ProductInput {
   name: string;
   sku: string;
+  barcode: string;
   category: string;
   price: number;
   cost: number;

@@ -11,3 +11,10 @@ class RecentAuthenticationRequired(BasePermission):
         if request.method in SAFE_METHODS:
             return True
         return did_recently_authenticate(request)
+
+
+class PlatformOwnerOnly(BasePermission):
+    message = "Only admin access."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_superuser)

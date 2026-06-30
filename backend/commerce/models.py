@@ -1,4 +1,5 @@
 from decimal import Decimal
+import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -47,6 +48,7 @@ class Product(LocationOwnedModel):
     name = models.CharField(max_length=180)
     sku = models.CharField(max_length=80)
     barcode = models.CharField(max_length=100, blank=True)
+    qr_identifier = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     unit = models.CharField(max_length=16, choices=Unit.choices, default=Unit.ITEM)
     selling_price = models.DecimalField(max_digits=18, decimal_places=2)
     cost_price = models.DecimalField(max_digits=18, decimal_places=2)
@@ -64,7 +66,7 @@ class Product(LocationOwnedModel):
             models.UniqueConstraint(
                 fields=["organization", "location", "sku"],
                 name="unique_product_sku_per_location",
-            )
+            ),
         ]
         ordering = ["name"]
         indexes = [
@@ -184,6 +186,9 @@ class Sale(LocationOwnedModel):
         VOID = "void", "Void"
 
     number = models.CharField(max_length=40)
+    receipt_qr_identifier = models.UUIDField(
+        default=uuid.uuid4, unique=True, editable=False
+    )
     customer = models.ForeignKey(
         Customer, null=True, blank=True, on_delete=models.PROTECT
     )
@@ -218,6 +223,8 @@ class SaleItem(LocationOwnedModel):
     product = models.ForeignKey(Product, on_delete=models.PROTECT)
     product_name = models.CharField(max_length=180)
     sku = models.CharField(max_length=80)
+    barcode = models.CharField(max_length=100, blank=True)
+    product_qr_identifier = models.UUIDField()
     unit = models.CharField(max_length=16)
     quantity = models.DecimalField(max_digits=18, decimal_places=3)
     unit_price = models.DecimalField(max_digits=18, decimal_places=2)

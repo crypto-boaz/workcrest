@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     BootstrapView,
     BrandingView,
+    CompanyLogoView,
     CompanySettingsView,
     CustomFieldViewSet,
     InvitationAcceptanceView,
@@ -36,6 +37,11 @@ urlpatterns = [
         "company-settings/",
         CompanySettingsView.as_view(),
         name="company-settings",
+    ),
+    path(
+        "company-logo/",
+        CompanyLogoView.as_view(),
+        name="company-logo",
     ),
     path(
         "invitations/accept/",

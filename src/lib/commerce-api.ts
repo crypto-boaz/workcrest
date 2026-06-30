@@ -77,6 +77,15 @@ export const commerceApi = {
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(payload),
     }),
+  saleByReceiptQr: (
+    locationId: string,
+    identifier: string,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<ApiSale>(
+      `${locationPath(locationId, "sales/receipt-lookup/")}?qr=${encodeURIComponent(identifier)}`,
+      { signal },
+    ),
   notifications: (signal?: AbortSignal) =>
     apiRequest<{ next: string | null; previous: string | null; results: ApiNotification[] }>(
       "/api/v1/notifications/",

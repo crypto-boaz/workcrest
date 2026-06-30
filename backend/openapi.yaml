@@ -33,6 +33,81 @@ paths:
               schema:
                 $ref: '#/components/schemas/Branding'
           description: ''
+  /api/v1/company-logo/:
+    get:
+      operationId: company_logo_retrieve
+      tags:
+      - company-logo
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    post:
+      operationId: company_logo_create
+      tags:
+      - company-logo
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyLogo'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CompanyLogo'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CompanyLogo'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    patch:
+      operationId: company_logo_partial_update
+      tags:
+      - company-logo
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCompanySettings'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCompanySettings'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCompanySettings'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    delete:
+      operationId: company_logo_destroy
+      tags:
+      - company-logo
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/company-settings/:
     get:
       operationId: company_settings_retrieve
@@ -2275,6 +2350,27 @@ paths:
             schema:
               $ref: '#/components/schemas/Sale'
         required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+          description: ''
+  /api/v1/locations/{location_id}/sales/receipt-lookup/:
+    get:
+      operationId: locations_sales_receipt_lookup_retrieve
+      parameters:
+      - in: path
+        name: location_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - locations
       security:
       - cookieAuth: []
       responses:
@@ -4642,7 +4738,7 @@ components:
         logo_url:
           type: string
           format: uri
-          maxLength: 200
+          readOnly: true
         favicon_url:
           type: string
           format: uri
@@ -4662,6 +4758,7 @@ components:
         document_prefixes: {}
       required:
       - display_name
+      - logo_url
     Category:
       type: object
       properties:
@@ -4692,6 +4789,14 @@ components:
       - name
       - slug
       - updated_at
+    CompanyLogo:
+      type: object
+      properties:
+        logo:
+          type: string
+          format: uri
+      required:
+      - logo
     CustomField:
       type: object
       properties:
@@ -5300,7 +5405,7 @@ components:
         slug:
           type: string
           maxLength: 63
-          pattern: ^[-a-zA-Z0-9_]+$
+          pattern: ^[a-z][a-z0-9-]{2,62}$
         industry_code:
           type: string
           default: commerce
@@ -6319,6 +6424,10 @@ components:
         barcode:
           type: string
           maxLength: 100
+        qr_identifier:
+          type: string
+          format: uuid
+          readOnly: true
         category:
           type: string
           format: uuid
@@ -6734,6 +6843,10 @@ components:
         barcode:
           type: string
           maxLength: 100
+        qr_identifier:
+          type: string
+          format: uuid
+          readOnly: true
         category:
           type: string
           format: uuid
@@ -6786,6 +6899,7 @@ components:
       - created_at
       - id
       - name
+      - qr_identifier
       - selling_price
       - sku
       - stock_quantity
@@ -7037,6 +7151,10 @@ components:
         number:
           type: string
           maxLength: 40
+        receipt_qr_identifier:
+          type: string
+          format: uuid
+          readOnly: true
         customer:
           type: string
           format: uuid
@@ -7092,6 +7210,7 @@ components:
       - items
       - number
       - payments
+      - receipt_qr_identifier
       - subtotal
       - total
     SaleItem:
@@ -7110,6 +7229,12 @@ components:
         sku:
           type: string
           maxLength: 80
+        barcode:
+          type: string
+          maxLength: 100
+        product_qr_identifier:
+          type: string
+          format: uuid
         unit:
           type: string
           maxLength: 16
@@ -7134,6 +7259,7 @@ components:
       - line_total
       - product
       - product_name
+      - product_qr_identifier
       - quantity
       - sku
       - unit

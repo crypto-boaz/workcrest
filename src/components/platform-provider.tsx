@@ -200,8 +200,12 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
         );
       },
       signOut: async () => {
-        if (apiMode) await platformApi.logout();
-        window.location.assign("/auth/login");
+        try {
+          if (apiMode) await platformApi.logout();
+        } finally {
+          queryClient.clear();
+          window.location.assign("/auth/login");
+        }
       },
     }),
     [bootstrap, currentLocation, locationStorageKey, manifest, queryClient],

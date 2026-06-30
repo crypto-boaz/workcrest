@@ -36,6 +36,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/company-logo/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["company_logo_retrieve"];
+        put?: never;
+        post: operations["company_logo_create"];
+        delete: operations["company_logo_destroy"];
+        options?: never;
+        head?: never;
+        patch: operations["company_logo_partial_update"];
+        trace?: never;
+    };
     "/api/v1/company-settings/": {
         parameters: {
             query?: never;
@@ -526,6 +542,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["locations_sales_checkout_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/locations/{location_id}/sales/receipt-lookup/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["locations_sales_receipt_lookup_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1231,7 +1263,7 @@ export interface components {
         Branding: {
             display_name: string;
             /** Format: uri */
-            logo_url?: string;
+            readonly logo_url: string;
             /** Format: uri */
             favicon_url?: string;
             primary_color?: string;
@@ -1251,6 +1283,10 @@ export interface components {
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at: string;
+        };
+        CompanyLogo: {
+            /** Format: uri */
+            logo: string;
         };
         CustomField: {
             /** Format: uuid */
@@ -2109,6 +2145,8 @@ export interface components {
             sku?: string;
             barcode?: string;
             /** Format: uuid */
+            readonly qr_identifier?: string;
+            /** Format: uuid */
             category?: string | null;
             readonly category_name?: string;
             unit?: components["schemas"]["UnitEnum"];
@@ -2302,6 +2340,8 @@ export interface components {
             sku: string;
             barcode?: string;
             /** Format: uuid */
+            readonly qr_identifier: string;
+            /** Format: uuid */
             category?: string | null;
             readonly category_name: string;
             unit?: components["schemas"]["UnitEnum"];
@@ -2427,6 +2467,8 @@ export interface components {
             readonly id: string;
             number: string;
             /** Format: uuid */
+            readonly receipt_qr_identifier: string;
+            /** Format: uuid */
             customer?: string | null;
             customer_name?: string;
             status?: components["schemas"]["SaleStatusEnum"];
@@ -2454,6 +2496,9 @@ export interface components {
             product: string;
             product_name: string;
             sku: string;
+            barcode?: string;
+            /** Format: uuid */
+            product_qr_identifier: string;
             unit: string;
             /** Format: decimal */
             quantity: string;
@@ -2673,6 +2718,99 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Branding"];
+                };
+            };
+        };
+    };
+    company_logo_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    company_logo_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyLogo"];
+                "application/x-www-form-urlencoded": components["schemas"]["CompanyLogo"];
+                "multipart/form-data": components["schemas"]["CompanyLogo"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    company_logo_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    company_logo_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedCompanySettings"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedCompanySettings"];
+                "multipart/form-data": components["schemas"]["PatchedCompanySettings"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -4471,6 +4609,27 @@ export interface operations {
                 "multipart/form-data": components["schemas"]["Sale"];
             };
         };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Sale"];
+                };
+            };
+        };
+    };
+    locations_sales_receipt_lookup_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                location_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             200: {
                 headers: {

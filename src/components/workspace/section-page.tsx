@@ -1,12 +1,16 @@
 "use client";
 
-import { CustomersPage, SalesPage } from "@/components/workspace/sales-customers-pages";
+import { LockKeyhole } from "lucide-react";
+
+import { SalesPage } from "@/components/workspace/sales-customers-pages";
 import { ProductsPage } from "@/components/workspace/products-page";
 import { PosPage } from "@/components/workspace/pos-page";
+import { ReturnsPage } from "@/components/workspace/purchases-returns-pages";
+import { Card, CardContent } from "@/components/ui/card";
 import {
-  PurchasesPage,
-  ReturnsPage,
-} from "@/components/workspace/purchases-returns-pages";
+  PageHeader,
+  Workspace,
+} from "@/components/workspace/workspace-ui";
 import {
   AlertsPage,
   ReportsPage,
@@ -17,6 +21,32 @@ import {
   StaffPage,
 } from "@/components/workspace/staff-expenses-pages";
 
+function AdminOnlyPage({ title }: { title: string }) {
+  return (
+    <Workspace size="medium">
+      <PageHeader
+        eyebrow="Restricted"
+        title={title}
+        description="This area is reserved for the Workcrest platform owner."
+      />
+      <Card>
+        <CardContent className="grid min-h-80 place-items-center p-8 text-center">
+          <div>
+            <span className="mx-auto grid size-12 place-items-center rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400">
+              <LockKeyhole className="size-5" />
+            </span>
+            <h2 className="mt-4 text-base font-semibold">Only admin access</h2>
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--muted-foreground)]">
+              This capability is currently unavailable across tenant
+              workspaces.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    </Workspace>
+  );
+}
+
 export function SectionPage({ section }: { section: string }) {
   switch (section) {
     case "products":
@@ -26,9 +56,9 @@ export function SectionPage({ section }: { section: string }) {
     case "pos":
       return <PosPage />;
     case "customers":
-      return <CustomersPage />;
+      return <AdminOnlyPage title="Customers" />;
     case "purchases":
-      return <PurchasesPage />;
+      return <AdminOnlyPage title="Purchases" />;
     case "returns":
       return <ReturnsPage />;
     case "people":

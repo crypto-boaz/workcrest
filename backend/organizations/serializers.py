@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
+from pathlib import Path
 import re
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 
 from .models import (
     BrandingProfile,
@@ -56,6 +58,8 @@ class LocationSerializer(serializers.ModelSerializer):
 
 
 class BrandingSerializer(serializers.ModelSerializer):
+    logo_url = serializers.SerializerMethodField()
+
     class Meta:
         model = BrandingProfile
         fields = [
@@ -69,6 +73,12 @@ class BrandingSerializer(serializers.ModelSerializer):
             "terminology",
             "document_prefixes",
         ]
+
+    @extend_schema_field(serializers.URLField(allow_blank=True))
+    def get_logo_url(self, obj) -> str:
+        if obj.logo:
+            return obj.logo.url
+        return obj.logo_url
 
     def validate_primary_color(self, value):
         if len(value) != 7 or not value.startswith("#"):
@@ -92,6 +102,55 @@ class BrandingSerializer(serializers.ModelSerializer):
                 f"Unsupported terminology keys: {', '.join(sorted(unknown))}."
             )
         return {key: str(label)[:40] for key, label in value.items()}
+
+
+class CompanyLogoSerializer(serializers.Serializer):
+    logo = serializers.FileField()
+
+    def validate_logo(self, value):
+        if value.size > 2 * 1024 * 1024:
+            raise serializers.ValidationError("Logo files must be 2 MB or smaller.")
+
+        extension = Path(value.name).suffix.lower()
+        allowed_extensions = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
+        if extension not in allowed_extensions:
+            raise serializers.ValidationError(
+                "Upload a PNG, JPEG, WebP, or SVG image."
+            )
+
+        content = value.read()
+        value.seek(0)
+        if extension == ".png" and not content.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise serializers.ValidationError("The uploaded PNG file is invalid.")
+        if extension in {".jpg", ".jpeg"} and not content.startswith(b"\xff\xd8\xff"):
+            raise serializers.ValidationError("The uploaded JPEG file is invalid.")
+        if extension == ".webp" and not (
+            content.startswith(b"RIFF") and content[8:12] == b"WEBP"
+        ):
+            raise serializers.ValidationError("The uploaded WebP file is invalid.")
+        if extension == ".svg":
+            try:
+                svg = content.decode("utf-8").lower()
+            except UnicodeDecodeError as exc:
+                raise serializers.ValidationError(
+                    "The uploaded SVG file is invalid."
+                ) from exc
+            unsafe = (
+                "<script",
+                "<foreignobject",
+                "<!doctype",
+                "<!entity",
+                "javascript:",
+            )
+            if "<svg" not in svg or any(token in svg for token in unsafe):
+                raise serializers.ValidationError(
+                    "The SVG contains unsupported or unsafe content."
+                )
+            if re.search(r"\son[a-z]+\s*=", svg):
+                raise serializers.ValidationError(
+                    "The SVG contains unsupported event attributes."
+                )
+        return value
 
 
 class CompanySettingsSerializer(serializers.Serializer):

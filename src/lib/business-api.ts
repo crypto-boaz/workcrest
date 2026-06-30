@@ -88,6 +88,7 @@ export async function loadBusinessState(
   const mappedSales = (sales.results ?? []).map((sale) => ({
     sourceId: sale.id,
     id: sale.number ?? sale.id ?? "",
+    receiptQrIdentifier: sale.receipt_qr_identifier,
     customerId: sale.customer ?? undefined,
     customerName: sale.customer_name ?? "Walk-in customer",
     items: (sale.items ?? []).map((item) => ({
@@ -95,6 +96,8 @@ export async function loadBusinessState(
       productId: item.product ?? "",
       name: item.product_name ?? "Product",
       sku: item.sku ?? "",
+      barcode: item.barcode ?? "",
+      productQrIdentifier: item.product_qr_identifier,
       quantity: Number(item.quantity ?? 0),
       unitPrice: Number(item.unit_price ?? 0),
       cost: Number(item.unit_cost ?? 0),
@@ -117,6 +120,8 @@ export async function loadBusinessState(
       id: product.id ?? "",
       name: product.name ?? "Product",
       sku: product.sku ?? "",
+      barcode: product.barcode ?? "",
+      qrIdentifier: product.qr_identifier,
       category: product.category_name ?? "Uncategorised",
       price: Number(product.selling_price ?? 0),
       cost: Number(product.cost_price ?? 0),
@@ -298,6 +303,7 @@ export const businessApi = {
       body: JSON.stringify({
         name: input.name,
         sku: input.sku,
+        barcode: input.barcode,
         category,
         unit: "item",
         selling_price: input.price.toFixed(2),
@@ -319,6 +325,7 @@ export const businessApi = {
       body: JSON.stringify({
         name: input.name,
         sku: input.sku,
+        barcode: input.barcode,
         category,
         selling_price: input.price.toFixed(2),
         cost_price: input.cost.toFixed(2),

@@ -36,6 +36,7 @@ import {
 const emptyProduct: ProductInput = {
   name: "",
   sku: "",
+  barcode: "",
   category: "Groceries",
   price: 0,
   cost: 0,
@@ -56,7 +57,12 @@ export function ProductsPage() {
   const filtered = useMemo(
     () =>
       state.products.filter((product) => {
-        const matchesQuery = [product.name, product.sku, product.category]
+        const matchesQuery = [
+          product.name,
+          product.sku,
+          product.barcode,
+          product.category,
+        ]
           .join(" ")
           .toLowerCase()
           .includes(query.toLowerCase());
@@ -93,6 +99,7 @@ export function ProductsPage() {
     setForm({
       name: product.name,
       sku: product.sku,
+      barcode: product.barcode ?? "",
       category: product.category,
       price: product.price,
       cost: product.cost,
@@ -111,9 +118,19 @@ export function ProductsPage() {
 
   const exportProducts = () =>
     downloadCsv(`${bootstrap.organization.slug}-products.csv`, [
-      ["SKU", "Product", "Category", "Price", "Cost", "Stock", "Reorder level"],
+      [
+        "SKU",
+        "Barcode",
+        "Product",
+        "Category",
+        "Price",
+        "Cost",
+        "Stock",
+        "Reorder level",
+      ],
       ...filtered.map((product) => [
         product.sku,
+        product.barcode || "Nil",
         product.name,
         product.category,
         product.price,
@@ -175,7 +192,7 @@ export function ProductsPage() {
         <Toolbar
           query={query}
           onQueryChange={setQuery}
-          placeholder="Search product, SKU, or category"
+          placeholder="Search product, SKU, barcode, or category"
         >
           <Select
             value={stockFilter}
@@ -193,10 +210,11 @@ export function ProductsPage() {
           </span>
         </Toolbar>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px] text-left text-xs">
+          <table className="w-full min-w-[980px] text-left text-xs">
             <thead>
               <tr className="bg-[var(--surface-subtle)] text-[10px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
                 <th className="px-5 py-3 font-semibold">Product</th>
+                <th className="px-4 py-3 font-semibold">Barcode</th>
                 <th className="px-4 py-3 font-semibold">Category</th>
                 <th className="px-4 py-3 text-right font-semibold">Price</th>
                 <th className="px-4 py-3 text-right font-semibold">Cost</th>
@@ -230,6 +248,9 @@ export function ProductsPage() {
                           </p>
                         </div>
                       </div>
+                    </td>
+                    <td className="px-4 py-3.5 font-mono text-[11px] text-[var(--muted-foreground)]">
+                      {product.barcode || "(Nil)"}
                     </td>
                     <td className="px-4 py-3.5 text-[var(--muted-foreground)]">
                       {product.category}
@@ -326,6 +347,19 @@ export function ProductsPage() {
                   setForm({ ...form, sku: event.target.value.toUpperCase() })
                 }
                 placeholder="FD-GPP-500"
+              />
+            </FormField>
+            <FormField
+              label="Barcode"
+              hint="Optional. It must be unique within this location."
+            >
+              <input
+                className={inputClass}
+                value={form.barcode}
+                onChange={(event) =>
+                  setForm({ ...form, barcode: event.target.value.trim() })
+                }
+                placeholder="e.g. 0123456789012"
               />
             </FormField>
             <FormField label="Category">

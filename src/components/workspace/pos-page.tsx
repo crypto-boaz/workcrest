@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 
 import { useBusinessStore } from "@/components/business-store-provider";
 import { usePlatform } from "@/components/platform-provider";
@@ -64,6 +65,7 @@ export function PosPage() {
   const [heldOpen, setHeldOpen] = useState(false);
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
+
   const apiProductsQuery = useQuery({
     queryKey: ["products", currentLocation.id, "pos"],
     queryFn: ({ signal }) =>
@@ -87,6 +89,8 @@ export function PosPage() {
         id: product.id ?? "",
         name: product.name ?? "Unnamed product",
         sku: product.sku ?? "",
+        barcode: product.barcode ?? "",
+        qrIdentifier: product.qr_identifier,
         category: product.category_name ?? "Uncategorised",
         price: Number(product.selling_price ?? 0),
         cost: Number(product.cost_price ?? 0),
@@ -120,7 +124,7 @@ export function PosPage() {
     (product) =>
       product.status === "active" &&
       (category === "All" || product.category === category) &&
-      [product.name, product.sku]
+      [product.name, product.sku, product.barcode]
         .join(" ")
         .toLowerCase()
         .includes(query.toLowerCase()),
@@ -248,13 +252,17 @@ export function PosPage() {
             | "transfer",
         });
         sale = {
+          sourceId: result.id,
           id: result.number ?? result.id ?? "",
+          receiptQrIdentifier: result.receipt_qr_identifier,
           customerId: result.customer ?? undefined,
           customerName: result.customer_name ?? "Walk-in customer",
           items: (result.items ?? []).map((item) => ({
             productId: item.product ?? "",
             name: item.product_name ?? "Product",
             sku: item.sku ?? "",
+            barcode: item.barcode ?? "",
+            productQrIdentifier: item.product_qr_identifier,
             quantity: Number(item.quantity ?? 0),
             unitPrice: Number(item.unit_price ?? 0),
             cost: Number(item.unit_cost ?? 0),
@@ -739,9 +747,18 @@ export function PosPage() {
           <>
             <div id="printable-receipt" className="p-5">
               <div className="text-center">
-                <span className="mx-auto grid size-11 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                  <Check className="size-5" />
-                </span>
+                {bootstrap.branding.logo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={bootstrap.branding.logo_url}
+                    alt={`${bootstrap.branding.display_name} logo`}
+                    className="mx-auto size-14 object-contain"
+                  />
+                ) : (
+                  <span className="mx-auto grid size-11 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                    <Check className="size-5" />
+                  </span>
+                )}
                 <p className="mt-3 text-base font-bold">
                   {bootstrap.branding.display_name}
                 </p>
@@ -773,6 +790,9 @@ export function PosPage() {
                   <div key={item.productId} className="flex gap-3 text-xs">
                     <div className="min-w-0 flex-1">
                       <p className="font-medium">{item.name}</p>
+                      <p className="mt-0.5 text-[9px] text-[var(--muted-foreground)]">
+                        SKU {item.sku} · Barcode {item.barcode || "Nil"}
+                      </p>
                       <p className="mt-0.5 text-[10px] text-[var(--muted-foreground)]">
                         {item.quantity} × {formatCurrency(item.unitPrice)}
                       </p>
@@ -802,6 +822,24 @@ export function PosPage() {
                   <span>Paid via</span>
                   <span>{receipt.paymentMethod}</span>
                 </div>
+              </div>
+              <div className="mt-5 border-t border-dashed border-[var(--border)] pt-4 text-center">
+                <div className="mx-auto w-fit rounded-lg bg-white p-2">
+                  <QRCodeSVG
+                    value={`${window.location.origin}/sales?receipt=${encodeURIComponent(
+                      receipt.receiptQrIdentifier ??
+                        receipt.sourceId ??
+                        receipt.id,
+                    )}`}
+                    size={112}
+                    level="M"
+                    aria-label={`QR code for receipt ${receipt.id}`}
+                  />
+                </div>
+                <p className="mx-auto mt-2 max-w-52 text-[9px] leading-4 text-[var(--muted-foreground)]">
+                  Scan to retrieve this sale and its product information for
+                  returns, exchanges, or warranty claims.
+                </p>
               </div>
               <p className="mt-6 text-center text-[10px] text-[var(--muted-foreground)]">
                 {bootstrap.branding.receipt_footer ||

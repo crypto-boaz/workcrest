@@ -83,7 +83,11 @@ export async function apiRequest<T>(
   init: RequestInit = {},
 ): Promise<T> {
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has("Content-Type")) {
+  if (
+    init.body &&
+    !(typeof FormData !== "undefined" && init.body instanceof FormData) &&
+    !headers.has("Content-Type")
+  ) {
     headers.set("Content-Type", "application/json");
   }
   const response = await fetch(path, {
@@ -126,6 +130,18 @@ export const platformApi = {
     secureApiRequest<CompanySettingsResponse>("/api/v1/company-settings/", {
       method: "PATCH",
       body: JSON.stringify(input),
+    }),
+  uploadCompanyLogo: (logo: File) => {
+    const body = new FormData();
+    body.append("logo", logo);
+    return secureApiRequest<CompanySettingsResponse>("/api/v1/company-logo/", {
+      method: "POST",
+      body,
+    });
+  },
+  removeCompanyLogo: () =>
+    secureApiRequest<CompanySettingsResponse>("/api/v1/company-logo/", {
+      method: "DELETE",
     }),
   login: (email: string, password: string) =>
     secureApiRequest<unknown>("/api/v1/auth/browser/v1/auth/login", {
@@ -178,8 +194,20 @@ export const platformApi = {
       throw error;
     }
   },
-  logout: () =>
-    secureApiRequest<unknown>("/api/v1/auth/browser/v1/auth/session", {
-      method: "DELETE",
-    }),
+  logout: async () => {
+    try {
+      return await secureApiRequest<unknown>(
+        "/api/v1/auth/browser/v1/auth/session",
+        { method: "DELETE" },
+      );
+    } catch (error) {
+      if (
+        error instanceof PlatformApiError &&
+        isUnauthenticatedAllauthState(error.payload)
+      ) {
+        return undefined;
+      }
+      throw error;
+    }
+  },
 };

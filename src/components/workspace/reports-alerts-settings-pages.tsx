@@ -10,6 +10,7 @@ import {
   CheckCheck,
   CircleDollarSign,
   Info,
+  ImagePlus,
   PackageCheck,
   Save,
   ShieldCheck,
@@ -527,6 +528,10 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [reauthOpen, setReauthOpen] = useState(false);
   const [password, setPassword] = useState("");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [pendingAction, setPendingAction] = useState<
+    "settings" | "logo" | "remove-logo" | null
+  >(null);
   const [form, setForm] = useState<CompanySettingsInput>(() => ({
     name: bootstrap.organization.name,
     primary_color: bootstrap.branding.primary_color,
@@ -572,6 +577,45 @@ export function SettingsPage() {
         error.status === 403 &&
         error.message.toLowerCase().includes("reauthenticate")
       ) {
+        setPendingAction("settings");
+        setReauthOpen(true);
+      }
+    },
+  });
+  const logoMutation = useMutation({
+    mutationFn: (file: File) => platformApi.uploadCompanyLogo(file),
+    onSuccess: (settings) => {
+      applyCompanySettings(settings);
+      setLogoFile(null);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 3000);
+    },
+    onError: (error) => {
+      if (
+        error instanceof PlatformApiError &&
+        error.status === 403 &&
+        error.message.toLowerCase().includes("reauthenticate")
+      ) {
+        setPendingAction("logo");
+        setReauthOpen(true);
+      }
+    },
+  });
+  const removeLogoMutation = useMutation({
+    mutationFn: platformApi.removeCompanyLogo,
+    onSuccess: (settings) => {
+      applyCompanySettings(settings);
+      setLogoFile(null);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 3000);
+    },
+    onError: (error) => {
+      if (
+        error instanceof PlatformApiError &&
+        error.status === 403 &&
+        error.message.toLowerCase().includes("reauthenticate")
+      ) {
+        setPendingAction("remove-logo");
         setReauthOpen(true);
       }
     },
@@ -579,10 +623,20 @@ export function SettingsPage() {
   const reauthentication = useMutation({
     mutationFn: () => platformApi.reauthenticate(password),
     onSuccess: () => {
+      const action = pendingAction;
       setPassword("");
+      setPendingAction(null);
       setReauthOpen(false);
-      mutation.reset();
-      mutation.mutate(form);
+      if (action === "logo" && logoFile) {
+        logoMutation.reset();
+        logoMutation.mutate(logoFile);
+      } else if (action === "remove-logo") {
+        removeLogoMutation.reset();
+        removeLogoMutation.mutate();
+      } else {
+        mutation.reset();
+        mutation.mutate(form);
+      }
     },
   });
 
@@ -645,6 +699,80 @@ export function SettingsPage() {
             </div>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-4 rounded-lg border border-[var(--border)] bg-[var(--background)] p-4 sm:col-span-2 sm:flex-row sm:items-center">
+              <div className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-[var(--primary-soft)] text-[var(--primary-soft-foreground)]">
+                {bootstrap.branding.logo_url ? (
+                  <span
+                    role="img"
+                    aria-label={`${bootstrap.branding.display_name} logo`}
+                    className="size-full bg-contain bg-center bg-no-repeat"
+                    style={{
+                      backgroundImage: `url("${bootstrap.branding.logo_url}")`,
+                    }}
+                  />
+                ) : (
+                  <Building2 className="size-7" aria-hidden="true" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">Business logo</p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                  PNG, JPEG, WebP, or SVG. Maximum file size: 2 MB.
+                </p>
+                {logoFile && (
+                  <p className="mt-2 truncate text-xs font-medium text-[var(--primary)]">
+                    Selected: {logoFile.name}
+                  </p>
+                )}
+              </div>
+              {isOwner && (
+                <div className="flex flex-wrap gap-2">
+                  <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold hover:bg-[var(--surface-hover)] focus-within:ring-2 focus-within:ring-[var(--ring)]">
+                    <ImagePlus className="size-3.5" />
+                    Choose logo
+                    <input
+                      type="file"
+                      className="sr-only"
+                      accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml"
+                      onChange={(event) =>
+                        setLogoFile(event.target.files?.[0] ?? null)
+                      }
+                    />
+                  </label>
+                  {logoFile && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={logoMutation.isPending}
+                      onClick={() => logoMutation.mutate(logoFile)}
+                    >
+                      {logoMutation.isPending ? "Uploading…" : "Upload"}
+                    </Button>
+                  )}
+                  {bootstrap.branding.logo_url && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={removeLogoMutation.isPending}
+                      onClick={() => removeLogoMutation.mutate()}
+                    >
+                      <Trash2 className="size-3.5" />
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+            {(logoMutation.error || removeLogoMutation.error) &&
+              !reauthOpen && (
+                <p
+                  role="alert"
+                  className="text-sm text-red-600 dark:text-red-400 sm:col-span-2"
+                >
+                  {(logoMutation.error ?? removeLogoMutation.error)?.message}
+                </p>
+              )}
             <FormField label="Company name" className="sm:col-span-2">
               <input
                 required
@@ -852,6 +980,7 @@ export function SettingsPage() {
           setReauthOpen(open);
           if (!open) {
             setPassword("");
+            setPendingAction(null);
             reauthentication.reset();
           }
         }}

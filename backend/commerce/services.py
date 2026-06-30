@@ -250,6 +250,8 @@ def complete_sale(
             product=product,
             product_name=product.name,
             sku=product.sku,
+            barcode=product.barcode,
+            product_qr_identifier=product.qr_identifier,
             unit=product.unit,
             quantity=quantity,
             unit_price=product.selling_price,

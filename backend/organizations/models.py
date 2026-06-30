@@ -16,6 +16,14 @@ slug_validator = RegexValidator(
 )
 
 
+def branding_logo_path(instance, filename):
+    extension = filename.rsplit(".", 1)[-1].lower()
+    return (
+        f"organizations/{instance.organization_id}/branding/"
+        f"logo-{uuid.uuid4().hex}.{extension}"
+    )
+
+
 class UUIDTimeStampedModel(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -131,6 +139,7 @@ class TenantDomain(OrganizationOwnedModel):
 
 class BrandingProfile(OrganizationOwnedModel):
     display_name = models.CharField(max_length=180)
+    logo = models.FileField(upload_to=branding_logo_path, blank=True)
     logo_url = models.URLField(blank=True)
     favicon_url = models.URLField(blank=True)
     primary_color = models.CharField(max_length=7, default="#2563EB")

@@ -122,3 +122,38 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+@media print {
+  body {
+    background: white !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  #printable-receipt,
+  #printable-receipt * {
+    visibility: visible !important;
+  }
+
+  #printable-receipt {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 80mm;
+    min-height: 0;
+    padding: 5mm !important;
+    background: white !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+  }
+
+  #printable-receipt img {
+    print-color-adjust: exact;
+  }
+
+  @page {
+    size: auto;
+    margin: 0;
+  }
+}

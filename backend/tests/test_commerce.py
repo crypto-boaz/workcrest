@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import pytest
+from rest_framework.test import APIClient
 
 from commerce.exceptions import IdempotencyConflict, InsufficientStock
 from commerce.models import (
@@ -29,6 +30,7 @@ def stocked_product(tenant_pair, quantity="5"):
         location=tenant_pair.location_a,
         name="Stocked Product",
         sku="STOCK-001",
+        barcode="0123456789012",
         selling_price=Decimal("1500"),
         cost_price=Decimal("900"),
         reorder_level=Decimal("1"),
@@ -70,6 +72,10 @@ def test_checkout_retry_returns_exactly_one_sale_and_one_stock_deduction(
     assert replayed_second is True
     assert balance.quantity == Decimal("3")
     assert product.stock_movements.filter(kind=StockMovement.Kind.SALE).count() == 1
+    assert first.receipt_qr_identifier is not None
+    sale_item = first.items.get()
+    assert sale_item.product_qr_identifier == product.qr_identifier
+    assert sale_item.barcode == product.barcode
 
 
 def test_reusing_idempotency_key_with_changed_payload_conflicts(tenant_pair):
@@ -91,6 +97,36 @@ def test_reusing_idempotency_key_with_changed_payload_conflicts(tenant_pair):
             payment_method=Payment.Method.CASH,
             idempotency_key="checkout-conflict",
         )
+
+
+def test_receipt_qr_lookup_returns_immutable_product_snapshot(tenant_pair):
+    product = stocked_product(tenant_pair)
+    sale, _ = complete_sale(
+        organization=tenant_pair.organization_a,
+        location=tenant_pair.location_a,
+        actor=tenant_pair.owner_a,
+        items=[{"product_id": str(product.id), "quantity": "1"}],
+        payment_method=Payment.Method.CASH,
+        idempotency_key="receipt-qr-lookup",
+    )
+    original_name = product.name
+    product.name = "Renamed after sale"
+    product.barcode = "9999999999999"
+    product.save(update_fields=["name", "barcode"])
+
+    client = APIClient()
+    client.force_authenticate(tenant_pair.owner_a)
+    response = client.get(
+        (
+            f"/api/v1/locations/{tenant_pair.location_a.id}/"
+            f"sales/receipt-lookup/?qr={sale.receipt_qr_identifier}"
+        ),
+        HTTP_X_TENANT_SLUG=tenant_pair.organization_a.slug,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["product_name"] == original_name
+    assert response.json()["items"][0]["barcode"] == "0123456789012"
 
 
 def test_sequential_checkout_cannot_oversell(tenant_pair):

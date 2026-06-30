@@ -34,6 +34,7 @@ from .models import (
 )
 from .serializers import (
     BrandingSerializer,
+    CompanyLogoSerializer,
     CompanySettingsSerializer,
     CustomFieldSerializer,
     InvitationSerializer,
@@ -435,6 +436,61 @@ class CompanySettingsView(TenantContextMixin, APIView):
             metadata={
                 "fields": sorted(serializer.validated_data),
             },
+        )
+        return Response(self._payload(organization, branding, location))
+
+
+class CompanyLogoView(CompanySettingsView):
+    serializer_class = CompanyLogoSerializer
+
+    @extend_schema(
+        request=CompanyLogoSerializer,
+        responses=OpenApiTypes.OBJECT,
+    )
+    @transaction.atomic
+    def post(self, request):
+        serializer = CompanyLogoSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        organization, branding, location = self._objects(lock=True)
+        old_logo_name = branding.logo.name if branding.logo else ""
+        branding.logo = serializer.validated_data["logo"]
+        branding.logo_url = ""
+        branding.save(update_fields=["logo", "logo_url", "updated_at"])
+        if old_logo_name and old_logo_name != branding.logo.name:
+            storage = branding.logo.storage
+            transaction.on_commit(
+                lambda name=old_logo_name: storage.delete(name)
+            )
+        record_audit(
+            organization=organization,
+            location=location,
+            actor=request.user,
+            action="organization.logo_updated",
+            target=branding,
+            request=request,
+        )
+        return Response(self._payload(organization, branding, location))
+
+    @extend_schema(request=None, responses=OpenApiTypes.OBJECT)
+    @transaction.atomic
+    def delete(self, request):
+        organization, branding, location = self._objects(lock=True)
+        old_logo_name = branding.logo.name if branding.logo else ""
+        branding.logo = None
+        branding.logo_url = ""
+        branding.save(update_fields=["logo", "logo_url", "updated_at"])
+        if old_logo_name:
+            storage = branding.logo.storage
+            transaction.on_commit(
+                lambda name=old_logo_name: storage.delete(name)
+            )
+        record_audit(
+            organization=organization,
+            location=location,
+            actor=request.user,
+            action="organization.logo_removed",
+            target=branding,
+            request=request,
         )
         return Response(self._payload(organization, branding, location))
 

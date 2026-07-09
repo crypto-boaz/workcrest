@@ -1,5 +1,6 @@
 "use client";
 
+import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Bell,
@@ -29,11 +30,11 @@ const menuItem =
   "flex cursor-default select-none items-center gap-2.5 rounded-lg px-3 py-2 text-sm outline-none transition-colors focus:bg-[var(--surface-hover)]";
 
 export function AppHeader({
-  onOpenMobile,
   onOpenSearch,
+  mobileNavigationOpen = false,
 }: {
-  onOpenMobile: () => void;
   onOpenSearch: () => void;
+  mobileNavigationOpen?: boolean;
 }) {
   const { resolvedTheme, setTheme } = useTheme();
   const { notifications, unread, markRead } = useNotifications();
@@ -57,15 +58,18 @@ export function AppHeader({
 
   return (
     <header className="sticky top-0 z-30 flex h-[72px] items-center gap-3 border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--background)_94%,transparent)] px-4 backdrop-blur-md sm:px-6">
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={onOpenMobile}
-        className="lg:hidden"
-        aria-label="Open navigation"
-      >
-        <Menu className="size-5" />
-      </Button>
+      <Dialog.Trigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="lg:hidden"
+          aria-label="Open navigation"
+          aria-expanded={mobileNavigationOpen}
+          aria-controls="mobile-navigation"
+        >
+          <Menu className="size-5" />
+        </Button>
+      </Dialog.Trigger>
 
       <button
         type="button"
@@ -101,6 +105,22 @@ export function AppHeader({
             </select>
           </label>
         )}
+
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onOpenSearch}
+          className="sm:hidden"
+          aria-label="Open search"
+        >
+          <Search className="size-[18px]" />
+        </Button>
+
+        <Button asChild size="icon" className="sm:hidden">
+          <Link href="/pos" aria-label="New sale">
+            <Plus className="size-[18px]" />
+          </Link>
+        </Button>
 
         <Button
           variant="ghost"

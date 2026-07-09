@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: workcrest-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements/base.txt && python manage.py collectstatic --noinput
+    startCommand: bash render_start.sh
+    healthCheckPath: /health/
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: DEBUG
+        value: "false"
+      - key: PLATFORM_NAME
+        value: Workcrest
+      - key: DATABASE_SSL_REQUIRE
+        value: "true"
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: SECURE_SSL_REDIRECT
+        value: "false"
+      - key: MEDIA_STORAGE_BACKEND
+        value: s3
+      - key: WEB_CONCURRENCY
+        value: "2"

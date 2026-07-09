@@ -31,6 +31,7 @@ export function SidebarContent({
     bootstrap,
     currentLocation,
     moduleEnabled,
+    setCurrentLocation,
     signOut,
   } = usePlatform();
   const primaryNavigation: readonly NavigationItem[] = moduleEnabled("commerce")
@@ -120,6 +121,22 @@ export function SidebarContent({
               </div>
             )}
           </div>
+          {!collapsed && bootstrap.locations.length > 1 && (
+            <label className="mb-2 block">
+              <span className="sr-only">Active location</span>
+              <select
+                value={currentLocation.id}
+                onChange={(event) => setCurrentLocation(event.target.value)}
+                className="h-10 w-full rounded-lg border border-[var(--sidebar-border)] bg-[var(--sidebar-hover)] px-3 text-xs text-[var(--sidebar-foreground)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--sidebar-ring)]"
+              >
+                {bootstrap.locations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <Button
             variant="ghost"
             className={cn(

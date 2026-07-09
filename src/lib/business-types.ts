@@ -212,8 +212,10 @@ export interface PurchaseInput {
 
 export interface ReturnInput {
   saleId: string;
-  productId: string;
-  quantity: number;
+  items: Array<{
+    productId: string;
+    quantity: number;
+  }>;
   reason: string;
 }
 

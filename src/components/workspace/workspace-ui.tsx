@@ -40,7 +40,9 @@ export function PageHeader({
         </p>
       </div>
       {actions && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-2 [&>*]:flex-1 sm:w-auto sm:[&>*]:flex-none">
+          {actions}
+        </div>
       )}
     </header>
   );
@@ -56,7 +58,7 @@ export function Workspace({
   return (
     <div
       className={cn(
-        "mx-auto w-full space-y-5 p-4 sm:p-6 lg:p-7",
+        "mx-auto w-full space-y-4 p-3.5 sm:space-y-5 sm:p-6 lg:p-7",
         size === "wide" ? "max-w-[1600px]" : "max-w-[1200px]",
       )}
     >
@@ -227,11 +229,11 @@ export function Modal({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-[2px]" />
         <Dialog.Content
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--popover)] shadow-2xl outline-none",
+            "fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto overscroll-contain rounded-xl border border-[var(--border)] bg-[var(--popover)] shadow-2xl outline-none sm:max-h-[90vh] sm:w-[calc(100%-2rem)]",
             sizes[size],
           )}
         >
-          <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--border)] bg-[var(--popover)] px-5 py-4">
+          <div className="sticky top-0 z-20 flex items-start justify-between gap-4 border-b border-[var(--border)] bg-[var(--popover)] px-4 py-3.5 sm:px-5 sm:py-4">
             <div>
               <Dialog.Title className="text-base font-bold">{title}</Dialog.Title>
               {description && (
@@ -240,7 +242,7 @@ export function Modal({
                 </Dialog.Description>
               )}
             </div>
-            <Dialog.Close className="grid size-8 shrink-0 place-items-center rounded-lg text-[var(--muted-foreground)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]">
+            <Dialog.Close className="grid size-10 shrink-0 place-items-center rounded-lg text-[var(--muted-foreground)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]">
               <X className="size-4" />
               <span className="sr-only">Close</span>
             </Dialog.Close>
@@ -288,7 +290,7 @@ export function ModalFooter({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col-reverse gap-2 border-t border-[var(--border)] px-5 py-4 sm:flex-row sm:justify-end">
+    <div className="sticky bottom-0 z-10 flex flex-col-reverse gap-2 border-t border-[var(--border)] bg-[var(--popover)] px-4 py-3 sm:flex-row sm:justify-end sm:px-5 sm:py-4">
       {children}
     </div>
   );

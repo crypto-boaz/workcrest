@@ -16,6 +16,7 @@ from commerce.services import (
     apply_stock,
     complete_sale,
     dispatch_transfer,
+    process_return,
     receive_transfer,
 )
 from organizations.models import Location
@@ -148,6 +149,50 @@ def test_sequential_checkout_cannot_oversell(tenant_pair):
             payment_method=Payment.Method.CASH,
             idempotency_key="stock-sale-2",
         )
+
+
+def test_one_return_can_restore_multiple_sale_items(tenant_pair):
+    first = stocked_product(tenant_pair)
+    second = Product.objects.create(
+        organization=tenant_pair.organization_a,
+        location=tenant_pair.location_a,
+        name="Second Product",
+        sku="STOCK-002",
+        selling_price=Decimal("2500"),
+        cost_price=Decimal("1200"),
+    )
+    apply_stock(
+        product=second,
+        delta=Decimal("4"),
+        kind=StockMovement.Kind.OPENING,
+        actor=tenant_pair.owner_a,
+    )
+    sale, _ = complete_sale(
+        organization=tenant_pair.organization_a,
+        location=tenant_pair.location_a,
+        actor=tenant_pair.owner_a,
+        items=[
+            {"product_id": str(first.id), "quantity": "2"},
+            {"product_id": str(second.id), "quantity": "3"},
+        ],
+        payment_method=Payment.Method.CASH,
+        idempotency_key="multi-item-return-sale",
+    )
+
+    returned = process_return(
+        sale=sale,
+        actor=tenant_pair.owner_a,
+        reason="Customer returned the complete order",
+        items=[
+            {"sale_item_id": sale.items.get(product=first).id, "quantity": "2"},
+            {"sale_item_id": sale.items.get(product=second).id, "quantity": "3"},
+        ],
+    )
+
+    assert returned.items.count() == 2
+    assert returned.total == Decimal("10500.00")
+    assert InventoryBalance.objects.get(product=first).quantity == Decimal("5")
+    assert InventoryBalance.objects.get(product=second).quantity == Decimal("4")
 
 
 def test_location_transfer_creates_balanced_movements(tenant_pair):

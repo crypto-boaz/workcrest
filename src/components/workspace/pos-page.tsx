@@ -53,6 +53,7 @@ export function PosPage() {
   const {
     bootstrap,
     currentLocation,
+    ready,
   } = usePlatform();
   const [cart, setCart] = useState<CartInput[]>([]);
   const [query, setQuery] = useState("");
@@ -70,19 +71,19 @@ export function PosPage() {
     queryKey: ["products", currentLocation.id, "pos"],
     queryFn: ({ signal }) =>
       commerceApi.products(currentLocation.id, "", signal),
-    enabled: apiMode,
+    enabled: apiMode && ready,
   });
   const apiCustomersQuery = useQuery({
     queryKey: ["customers", currentLocation.id, "pos"],
     queryFn: ({ signal }) =>
       commerceApi.customers(currentLocation.id, signal),
-    enabled: apiMode,
+    enabled: apiMode && ready,
   });
   const apiHeldCartsQuery = useQuery({
     queryKey: ["held-carts", currentLocation.id],
     queryFn: ({ signal }) =>
       commerceApi.heldCarts(currentLocation.id, signal),
-    enabled: apiMode,
+    enabled: apiMode && ready,
   });
   const availableProducts: Product[] = apiMode
     ? (apiProductsQuery.data?.results ?? []).map((product) => ({

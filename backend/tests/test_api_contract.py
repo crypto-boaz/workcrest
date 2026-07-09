@@ -7,6 +7,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
 from commerce.models import Product
+from commerce.services import is_valid_ean13
 from organizations.models import (
     BrandingProfile,
     CustomFieldDefinition,
@@ -93,9 +94,11 @@ def test_custom_fields_reject_unknown_and_validate_configured_values(
     assert unknown.status_code == 400
     assert invalid.status_code == 400
     assert valid.status_code == 201
-    assert Product.objects.get(id=valid.json()["id"]).custom_data == {
+    created_product = Product.objects.get(id=valid.json()["id"])
+    assert created_product.custom_data == {
         "shade": "Deep"
     }
+    assert is_valid_ean13(created_product.barcode)
 
 
 def test_location_scoped_role_does_not_grant_other_location_access(tenant_pair):
@@ -139,10 +142,8 @@ def test_location_scoped_role_does_not_grant_other_location_access(tenant_pair):
     assert denied.status_code == 403
 
 
-def test_owner_company_settings_update_propagates_to_bootstrap(
-    tenant_pair, settings, tmp_path
-):
-    settings.MEDIA_ROOT = tmp_path
+def test_owner_company_settings_update_propagates_to_bootstrap(tenant_pair, settings):
+    settings.MEDIA_ROOT = settings.BASE_DIR / "media" / "tests"
     EmailAddress.objects.create(
         user=tenant_pair.owner_a,
         email=tenant_pair.owner_a.email,

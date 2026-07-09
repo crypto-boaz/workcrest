@@ -117,9 +117,11 @@ export function BusinessStoreProvider({
   const platform = useOptionalPlatform();
   const actorName = platform?.bootstrap.user.full_name || "Store manager";
   const activeScope =
-    apiMode && platform
+    apiMode && platform?.ready
       ? `${platform.bootstrap.organization.id}.${platform.currentLocation.id}`
-      : "mock";
+      : apiMode
+        ? "pending"
+        : "mock";
   const [state, setState] = useState<BusinessState>(() =>
     apiMode ? emptyBusinessState(platform) : cloneSeed(),
   );
@@ -157,7 +159,7 @@ export function BusinessStoreProvider({
   );
 
   const refreshBusinessState = useCallback(async () => {
-    if (!apiMode || !platform) return;
+    if (!apiMode || !platform?.ready) return;
     const nextState = await loadBusinessState(
       platform.currentLocation.id,
       platform.bootstrap,
@@ -167,7 +169,7 @@ export function BusinessStoreProvider({
   }, [activeScope, platform]);
 
   useEffect(() => {
-    if (!apiMode || !platform) return;
+    if (!apiMode || !platform?.ready) return;
     let active = true;
     void loadBusinessState(
       platform.currentLocation.id,
@@ -645,17 +647,30 @@ export function BusinessStoreProvider({
   const createReturn = useCallback(
     (input: ReturnInput) => {
       const sale = state.sales.find((entry) => entry.id === input.saleId);
-      const item = sale?.items.find(
-        (entry) => entry.productId === input.productId,
+      if (!sale || !input.items.length) {
+        throw new Error("Select at least one valid sale item.");
+      }
+      const selectedItems = input.items.map((line) => {
+        const saleItem = sale.items.find(
+          (entry) => entry.productId === line.productId,
+        );
+        if (!saleItem) throw new Error("Select a valid sale item.");
+        if (line.quantity <= 0 || line.quantity > saleItem.quantity) {
+          throw new Error(
+            `Return quantity for ${saleItem.name} exceeds the original sale.`,
+          );
+        }
+        return { line, saleItem };
+      });
+      const totalUnits = selectedItems.reduce(
+        (sum, item) => sum + item.line.quantity,
+        0,
       );
-      if (!sale || !item) throw new Error("Select a valid sale item.");
-      if (input.quantity > item.quantity)
-        throw new Error("Return quantity exceeds the original sale.");
       if (apiMode && platform) {
-        if (!item.sourceItemId) {
+        if (selectedItems.some(({ saleItem }) => !saleItem.sourceItemId)) {
           showToast(
             "Could not process return",
-            "The original sale item could not be identified.",
+            "One or more original sale items could not be identified.",
             "error",
           );
           return;
@@ -663,14 +678,18 @@ export function BusinessStoreProvider({
         void businessApi
           .createReturn(
             platform.currentLocation.id,
-            { ...input, saleId: sale.sourceId ?? input.saleId },
-            item.sourceItemId,
+            sale.sourceId ?? input.saleId,
+            input.reason,
+            selectedItems.map(({ line, saleItem }) => ({
+              saleItemId: saleItem.sourceItemId!,
+              quantity: line.quantity,
+            })),
           )
           .then(refreshBusinessState)
           .then(() =>
             showToast(
               "Return approved",
-              `${input.quantity} unit(s) restored to stock.`,
+              `${totalUnits} unit(s) across ${selectedItems.length} item(s) restored to stock.`,
             ),
           )
           .catch((error) =>
@@ -686,27 +705,33 @@ export function BusinessStoreProvider({
       setState((current) => ({
         ...current,
         returns: [
-          {
-            id: `RT-${2041 + current.returns.length}`,
+          ...selectedItems.map(({ line, saleItem }, index) => ({
+            id: `RT-${2041 + current.returns.length}-${index + 1}`,
             saleId: sale.id,
-            productId: item.productId,
-            itemName: item.name,
+            productId: saleItem.productId,
+            itemName: saleItem.name,
             customerName: sale.customerName,
-            quantity: input.quantity,
-            amount: item.unitPrice * input.quantity,
+            quantity: line.quantity,
+            amount: saleItem.unitPrice * line.quantity,
             reason: input.reason,
-            status: "approved",
+            status: "approved" as const,
             createdAt: new Date().toISOString(),
-          },
+          })),
           ...current.returns,
         ],
-        products: current.products.map((product) =>
-          product.id === item.productId
-            ? { ...product, stock: product.stock + input.quantity }
-            : product,
-        ),
+        products: current.products.map((product) => {
+          const returned = selectedItems
+            .filter(({ saleItem }) => saleItem.productId === product.id)
+            .reduce((sum, item) => sum + item.line.quantity, 0);
+          return returned
+            ? { ...product, stock: product.stock + returned }
+            : product;
+        }),
       }));
-      showToast("Return approved", `${input.quantity} unit(s) restored to stock.`);
+      showToast(
+        "Return approved",
+        `${totalUnits} unit(s) across ${selectedItems.length} item(s) restored to stock.`,
+      );
     },
     [platform, refreshBusinessState, showToast, state.sales],
   );

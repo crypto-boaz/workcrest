@@ -5,9 +5,11 @@ import {
   CalendarClock,
   CheckCircle2,
   CircleDollarSign,
+  ListPlus,
   PackageCheck,
   Plus,
   RotateCcw,
+  Trash2,
   Truck,
   Warehouse,
 } from "lucide-react";
@@ -94,7 +96,7 @@ export function PurchasesPage() {
           </Button>
         }
       />
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatTile
           label="Open orders"
           value={String(
@@ -339,12 +341,99 @@ export function ReturnsPage() {
   const firstSale = state.sales[0];
   const [form, setForm] = useState<ReturnInput>({
     saleId: firstSale?.id ?? "",
-    productId: firstSale?.items[0]?.productId ?? "",
-    quantity: 1,
+    items: firstSale?.items[0]
+      ? [{ productId: firstSale.items[0].productId, quantity: 1 }]
+      : [],
     reason: "Damaged item",
   });
 
   const selectedSale = state.sales.find((sale) => sale.id === form.saleId);
+  const remainingQuantity = (
+    sale: (typeof state.sales)[number],
+    productId: string,
+    purchasedQuantity: number,
+  ) => {
+    const alreadyReturned = state.returns
+      .filter(
+        (record) =>
+          record.saleId === sale.id &&
+          record.productId === productId &&
+          record.status === "approved",
+      )
+      .reduce((sum, record) => sum + record.quantity, 0);
+    return Math.max(0, purchasedQuantity - alreadyReturned);
+  };
+  const returnableItems =
+    selectedSale?.items
+      .map((item) => {
+        return {
+          ...item,
+          returnableQuantity: remainingQuantity(
+            selectedSale,
+            item.productId,
+            item.quantity,
+          ),
+        };
+      })
+      .filter((item) => item.returnableQuantity > 0) ?? [];
+  const openReturnModal = () => {
+    const sale = state.sales.find(
+      (entry) =>
+        entry.status !== "refunded" &&
+        entry.items.some(
+          (item) =>
+            remainingQuantity(entry, item.productId, item.quantity) > 0,
+        ),
+    );
+    if (sale && (!selectedSale || returnableItems.length === 0)) {
+      const firstItem = sale.items.find(
+        (item) =>
+          remainingQuantity(sale, item.productId, item.quantity) > 0,
+      );
+      setForm({
+        ...form,
+        saleId: sale.id,
+        items: firstItem
+          ? [{ productId: firstItem.productId, quantity: 1 }]
+          : [],
+      });
+    }
+    setModalOpen(true);
+  };
+  const addReturnItem = () => {
+    const available = returnableItems.find(
+      (item) =>
+        !form.items.some((line) => line.productId === item.productId),
+    );
+    if (!available) return;
+    setForm({
+      ...form,
+      items: [
+        ...form.items,
+        { productId: available.productId, quantity: 1 },
+      ],
+    });
+  };
+  const addAllReturnItems = () => {
+    if (!selectedSale) return;
+    setForm({
+      ...form,
+      items: returnableItems.map((item) => ({
+        productId: item.productId,
+        quantity: item.returnableQuantity,
+      })),
+    });
+  };
+  const returnUnits = form.items.reduce(
+    (sum, item) => sum + item.quantity,
+    0,
+  );
+  const estimatedReturn = form.items.reduce((sum, line) => {
+    const item = selectedSale?.items.find(
+      (entry) => entry.productId === line.productId,
+    );
+    return sum + (item?.unitPrice ?? 0) * line.quantity;
+  }, 0);
   const filtered = state.returns.filter((record) =>
     [record.id, record.saleId, record.itemName, record.customerName]
       .join(" ")
@@ -378,12 +467,12 @@ export function ReturnsPage() {
         title="Returns"
         description="Process item returns against original receipts and restore approved quantities to stock."
         actions={
-          <Button onClick={() => setModalOpen(true)}>
+          <Button onClick={openReturnModal}>
             <RotateCcw className="size-4" /> Process return
           </Button>
         }
       />
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatTile
           label="Total returns"
           value={String(state.returns.length)}
@@ -501,54 +590,188 @@ export function ReturnsPage() {
                   const sale = state.sales.find(
                     (entry) => entry.id === event.target.value,
                   );
+                  const firstItem = sale?.items.find(
+                    (item) =>
+                      remainingQuantity(
+                        sale,
+                        item.productId,
+                        item.quantity,
+                      ) > 0,
+                  );
                   setForm({
                     ...form,
                     saleId: event.target.value,
-                    productId: sale?.items[0]?.productId ?? "",
+                    items: firstItem
+                      ? [
+                          {
+                            productId: firstItem.productId,
+                            quantity: 1,
+                          },
+                        ]
+                      : [],
                   });
                 }}
               >
-                {state.sales.map((sale) => (
-                  <option key={sale.id} value={sale.id}>
-                    {sale.id} · {sale.customerName} ·{" "}
-                    {formatCurrency(sale.total)}
-                  </option>
-                ))}
+                {state.sales
+                  .filter(
+                    (sale) =>
+                      sale.status !== "refunded" &&
+                      sale.items.some(
+                        (item) =>
+                          remainingQuantity(
+                            sale,
+                            item.productId,
+                            item.quantity,
+                          ) > 0,
+                      ),
+                  )
+                  .map((sale) => (
+                    <option key={sale.id} value={sale.id}>
+                      {sale.id} · {sale.customerName} ·{" "}
+                      {formatCurrency(sale.total)}
+                    </option>
+                  ))}
               </select>
             </FormField>
-            <FormField label="Item">
-              <select
-                required
-                className={inputClass}
-                value={form.productId}
-                onChange={(event) =>
-                  setForm({ ...form, productId: event.target.value })
-                }
-              >
-                {selectedSale?.items.map((item) => (
-                  <option key={item.productId} value={item.productId}>
-                    {item.name} · max {item.quantity}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-            <FormField label="Quantity">
-              <input
-                required
-                min="1"
-                max={
-                  selectedSale?.items.find(
-                    (item) => item.productId === form.productId,
-                  )?.quantity ?? 1
-                }
-                type="number"
-                className={inputClass}
-                value={form.quantity}
-                onChange={(event) =>
-                  setForm({ ...form, quantity: Number(event.target.value) })
-                }
-              />
-            </FormField>
+            <div className="overflow-hidden rounded-xl border border-[var(--border)]">
+              <div className="flex flex-col gap-3 border-b border-[var(--border)] bg-[var(--surface-subtle)] p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold">Items to return</p>
+                  <p className="mt-0.5 text-[10px] text-[var(--muted-foreground)]">
+                    Add individual products or return the complete sale.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={
+                      !selectedSale ||
+                      form.items.length >= returnableItems.length
+                    }
+                    onClick={addReturnItem}
+                  >
+                    <Plus className="size-3.5" /> Add item
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={
+                      !selectedSale ||
+                      form.items.length === returnableItems.length
+                    }
+                    onClick={addAllReturnItems}
+                  >
+                    <ListPlus className="size-3.5" /> Add all items
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-3 p-3">
+                {form.items.map((line, index) => {
+                  const saleItem = returnableItems.find(
+                    (item) => item.productId === line.productId,
+                  );
+                  return (
+                    <div
+                      key={`${line.productId}-${index}`}
+                      className="grid gap-3 rounded-lg border border-[var(--border)] p-3 sm:grid-cols-[minmax(0,1fr)_110px_32px] sm:items-end"
+                    >
+                      <FormField label={`Item ${index + 1}`}>
+                        <select
+                          required
+                          className={inputClass}
+                          value={line.productId}
+                          onChange={(event) => {
+                            const items = [...form.items];
+                            items[index] = {
+                              productId: event.target.value,
+                              quantity: 1,
+                            };
+                            setForm({ ...form, items });
+                          }}
+                        >
+                          {returnableItems
+                            .filter(
+                              (item) =>
+                                item.productId === line.productId ||
+                                !form.items.some(
+                                  (entry) =>
+                                    entry.productId === item.productId,
+                                ),
+                            )
+                            .map((item) => (
+                              <option
+                                key={item.productId}
+                                value={item.productId}
+                              >
+                                {item.name} · max {item.returnableQuantity}
+                              </option>
+                            ))}
+                        </select>
+                      </FormField>
+                      <FormField label="Quantity">
+                        <input
+                          required
+                          min="0.001"
+                          step="0.001"
+                          max={saleItem?.returnableQuantity ?? 1}
+                          type="number"
+                          className={inputClass}
+                          value={line.quantity || ""}
+                          onChange={(event) => {
+                            const items = [...form.items];
+                            items[index] = {
+                              ...line,
+                              quantity: Number(event.target.value),
+                            };
+                            setForm({ ...form, items });
+                          }}
+                        />
+                      </FormField>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="size-8 text-red-600"
+                        aria-label={`Remove ${saleItem?.name ?? "return item"}`}
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            items: form.items.filter(
+                              (_, itemIndex) => itemIndex !== index,
+                            ),
+                          })
+                        }
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  );
+                })}
+                {!form.items.length && (
+                  <div className="py-5 text-center">
+                    <PackageCheck className="mx-auto size-6 text-[var(--muted-foreground)]" />
+                    <p className="mt-2 text-xs font-semibold">
+                      No return items selected
+                    </p>
+                    <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">
+                      Add an item to continue.
+                    </p>
+                  </div>
+                )}
+              </div>
+              {form.items.length > 0 && (
+                <div className="flex items-center justify-between border-t border-[var(--border)] bg-[var(--surface-subtle)] px-3 py-2.5 text-xs">
+                  <span className="text-[var(--muted-foreground)]">
+                    {form.items.length} product
+                    {form.items.length === 1 ? "" : "s"} · {returnUnits} units
+                  </span>
+                  <strong>{formatCurrency(estimatedReturn)}</strong>
+                </div>
+              )}
+            </div>
             <FormField label="Reason">
               <textarea
                 required
@@ -568,7 +791,9 @@ export function ReturnsPage() {
             >
               Cancel
             </Button>
-            <Button type="submit">Approve return</Button>
+            <Button type="submit" disabled={!form.items.length}>
+              Approve return
+            </Button>
           </ModalFooter>
         </form>
       </Modal>

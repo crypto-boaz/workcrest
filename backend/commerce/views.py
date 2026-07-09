@@ -59,6 +59,7 @@ from .services import (
     complete_sale,
     dispatch_transfer,
     execute_idempotent,
+    generate_internal_ean13,
     process_return,
     receive_purchase,
     receive_transfer,
@@ -150,8 +151,25 @@ class ProductViewSet(CommerceViewSet):
         opening_quantity = serializer.validated_data.pop(
             "opening_quantity", Decimal("0")
         )
+        barcode = serializer.validated_data.get("barcode", "")
+        if not barcode:
+            for _ in range(20):
+                candidate = generate_internal_ean13()
+                if not Product.objects.filter(
+                    organization=self.organization,
+                    location=self.location,
+                    barcode=candidate,
+                ).exists():
+                    barcode = candidate
+                    break
+            if not barcode:
+                raise ValidationError(
+                    {"barcode": "A unique EAN-13 barcode could not be generated."}
+                )
         product = serializer.save(
-            organization=self.organization, location=self.location
+            organization=self.organization,
+            location=self.location,
+            barcode=barcode,
         )
         InventoryBalance.objects.get_or_create(
             organization=self.organization,

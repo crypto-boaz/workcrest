@@ -91,6 +91,7 @@ coverage/
 .coverage.*
 htmlcov/
 .pytest_cache/
+.pytest_tmp*/
 backend/.pytest_cache/
 backend/pytest-cache-files-*/
 .mypy_cache/
@@ -129,4 +130,3 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
-

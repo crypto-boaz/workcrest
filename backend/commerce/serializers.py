@@ -1,4 +1,5 @@
 from decimal import Decimal
+import re
 
 from django.db import models, transaction
 from django.db.models import DecimalField, Sum, Value
@@ -27,7 +28,7 @@ from .models import (
     Supplier,
     TransferItem,
 )
-from .services import next_document_number
+from .services import is_valid_ean13, next_document_number
 
 
 MONEY_FIELD = DecimalField(max_digits=18, decimal_places=2)
@@ -41,6 +42,20 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    selling_price = serializers.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        required=False,
+        default=Decimal("0"),
+    )
+    cost_price = serializers.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        required=False,
+        default=Decimal("0"),
+    )
     stock_quantity = serializers.DecimalField(
         max_digits=18, decimal_places=3, read_only=True, source="inventory.quantity"
     )
@@ -88,6 +103,11 @@ class ProductSerializer(serializers.ModelSerializer):
         value = value.strip()
         if not value:
             return ""
+        if self.instance is None or value != self.instance.barcode:
+            if not is_valid_ean13(value):
+                raise serializers.ValidationError(
+                    "Enter a valid 13-digit EAN-13 barcode."
+                )
         view = self.context["view"]
         products = Product.objects.filter(
             organization=view.organization,
@@ -99,6 +119,26 @@ class ProductSerializer(serializers.ModelSerializer):
         if products.exists():
             raise serializers.ValidationError(
                 "This barcode is already assigned to another product."
+            )
+        return value
+
+    def validate_sku(self, value):
+        value = re.sub(r"[^A-Z0-9]+", "-", value.strip().upper()).strip("-")
+        if not value:
+            raise serializers.ValidationError(
+                "SKU must contain at least one letter or number."
+            )
+        view = self.context["view"]
+        products = Product.objects.filter(
+            organization=view.organization,
+            location=view.location,
+            sku=value,
+        )
+        if self.instance is not None:
+            products = products.exclude(id=self.instance.id)
+        if products.exists():
+            raise serializers.ValidationError(
+                "This SKU is already assigned to another product."
             )
         return value
 

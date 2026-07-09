@@ -6441,10 +6441,12 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,16}(?:\.\d{0,2})?$
+          default: '0.00'
         cost_price:
           type: string
           format: decimal
           pattern: ^-?\d{0,16}(?:\.\d{0,2})?$
+          default: '0.00'
         reorder_level:
           type: string
           format: decimal
@@ -6860,10 +6862,12 @@ components:
           type: string
           format: decimal
           pattern: ^-?\d{0,16}(?:\.\d{0,2})?$
+          default: '0.00'
         cost_price:
           type: string
           format: decimal
           pattern: ^-?\d{0,16}(?:\.\d{0,2})?$
+          default: '0.00'
         reorder_level:
           type: string
           format: decimal
@@ -6895,12 +6899,10 @@ components:
           readOnly: true
       required:
       - category_name
-      - cost_price
       - created_at
       - id
       - name
       - qr_identifier
-      - selling_price
       - sku
       - stock_quantity
       - updated_at

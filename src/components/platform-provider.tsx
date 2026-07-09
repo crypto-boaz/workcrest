@@ -28,6 +28,7 @@ import { configureFormatting } from "@/lib/utils";
 
 interface PlatformContextValue {
   apiMode: boolean;
+  ready: boolean;
   manifest: TenantManifest;
   bootstrap: TenantBootstrap;
   currentLocation: TenantLocation;
@@ -76,6 +77,7 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
   });
   const manifest = manifestQuery.data ?? mockManifest;
   const bootstrap = bootstrapQuery.data ?? mockBootstrap;
+  const ready = !apiMode || Boolean(bootstrapQuery.data);
   const locationStorageKey = `saas.location.${bootstrap.organization.id}.${bootstrap.user.id}`;
   const [locationId, setLocationId] = useState(
     bootstrap.locations.find((location) => location.is_primary)?.id ??
@@ -150,6 +152,7 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
   const value = useMemo<PlatformContextValue>(
     () => ({
       apiMode,
+      ready,
       manifest,
       bootstrap,
       currentLocation,
@@ -208,7 +211,14 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
         }
       },
     }),
-    [bootstrap, currentLocation, locationStorageKey, manifest, queryClient],
+    [
+      bootstrap,
+      currentLocation,
+      locationStorageKey,
+      manifest,
+      queryClient,
+      ready,
+    ],
   );
 
   if (apiMode && (manifestQuery.isError || bootstrapQuery.isError)) {

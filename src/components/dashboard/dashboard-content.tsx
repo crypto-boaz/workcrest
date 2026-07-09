@@ -457,7 +457,10 @@ export function DashboardContent() {
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--primary-soft-foreground)]">
             Daily overview
           </p>
-          <h1 className="mt-2 text-2xl font-bold tracking-[-0.035em] sm:text-[1.75rem]">
+          <h1
+            suppressHydrationWarning
+            className="mt-2 text-2xl font-bold tracking-[-0.035em] sm:text-[1.75rem]"
+          >
             {greeting}, {firstName}.
           </h1>
           <p className="mt-1.5 max-w-xl text-sm text-[var(--muted-foreground)]">
@@ -480,7 +483,10 @@ export function DashboardContent() {
           >
             {formatDate(new Date(), { weekday: "long" })}
           </p>
-          <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">
+          <p
+            suppressHydrationWarning
+            className="mt-1 text-[10px] text-[var(--muted-foreground)]"
+          >
             Updated {formatTime(data.lastUpdated)}
           </p>
         </div>
@@ -488,7 +494,7 @@ export function DashboardContent() {
 
       <section
         aria-label="Business summary"
-        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+        className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4"
       >
         {data.metrics.map((metric) => (
           <MetricCard key={metric.key} metric={metric} />

@@ -44,6 +44,17 @@ const emptyProduct: ProductInput = {
   reorderLevel: 5,
 };
 
+function formatProductSku(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80)
+    .replace(/-+$/g, "");
+}
+
 export function ProductsPage() {
   const { state, addProduct, updateProduct, archiveProduct } =
     useBusinessStore();
@@ -53,6 +64,7 @@ export function ProductsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<ProductInput>(emptyProduct);
+  const [skuEdited, setSkuEdited] = useState(false);
 
   const filtered = useMemo(
     () =>
@@ -91,11 +103,13 @@ export function ProductsPage() {
   const openCreate = () => {
     setEditing(null);
     setForm(emptyProduct);
+    setSkuEdited(false);
     setModalOpen(true);
   };
 
   const openEdit = (product: Product) => {
     setEditing(product);
+    setSkuEdited(true);
     setForm({
       name: product.name,
       sku: product.sku,
@@ -156,7 +170,7 @@ export function ProductsPage() {
         }
       />
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatTile
           label="Inventory value"
           value={formatCurrency(inventoryValue)}
@@ -332,26 +346,38 @@ export function ProductsPage() {
                 required
                 className={inputClass}
                 value={form.name}
-                onChange={(event) =>
-                  setForm({ ...form, name: event.target.value })
-                }
+                onChange={(event) => {
+                  const name = event.target.value;
+                  setForm({
+                    ...form,
+                    name,
+                    sku: skuEdited ? form.sku : formatProductSku(name),
+                  });
+                }}
                 placeholder="e.g. Golden Penny Pasta 500g"
               />
             </FormField>
-            <FormField label="SKU">
+            <FormField
+              label="SKU / product slug"
+              hint="Generated from the product name. You can edit it before saving."
+            >
               <input
                 required
                 className={inputClass}
                 value={form.sku}
-                onChange={(event) =>
-                  setForm({ ...form, sku: event.target.value.toUpperCase() })
-                }
+                onChange={(event) => {
+                  setSkuEdited(true);
+                  setForm({
+                    ...form,
+                    sku: formatProductSku(event.target.value),
+                  });
+                }}
                 placeholder="FD-GPP-500"
               />
             </FormField>
             <FormField
               label="Barcode"
-              hint="Optional. It must be unique within this location."
+              hint="Optional. Leave blank and Workcrest will generate a valid EAN-13 barcode."
             >
               <input
                 className={inputClass}
@@ -377,10 +403,10 @@ export function ProductsPage() {
                 <option>Other</option>
               </select>
             </FormField>
-            <FormField label="Selling price (₦)">
+            <FormField label="Selling price (optional)">
               <input
-                required
                 min="0"
+                step="0.01"
                 type="number"
                 className={inputClass}
                 value={form.price || ""}
@@ -389,10 +415,10 @@ export function ProductsPage() {
                 }
               />
             </FormField>
-            <FormField label="Unit cost (₦)">
+            <FormField label="Unit cost (optional)">
               <input
-                required
                 min="0"
+                step="0.01"
                 type="number"
                 className={inputClass}
                 value={form.cost || ""}
@@ -407,7 +433,7 @@ export function ProductsPage() {
                 min="0"
                 type="number"
                 className={inputClass}
-                value={form.stock}
+                value={form.stock || ""}
                 onChange={(event) =>
                   setForm({ ...form, stock: Number(event.target.value) })
                 }

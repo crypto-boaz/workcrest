@@ -6,7 +6,6 @@ import type {
   PaymentMethod,
   ProductInput,
   PurchaseInput,
-  ReturnInput,
   StaffRole,
   StaffInput,
 } from "@/lib/business-types";
@@ -389,21 +388,20 @@ export const businessApi = {
     }),
   createReturn: (
     locationId: string,
-    input: ReturnInput,
-    saleItemId: string,
+    saleId: string,
+    reason: string,
+    items: Array<{ saleItemId: string; quantity: number }>,
   ) =>
     secureApiRequest(locationPath(locationId, "returns/"), {
       method: "POST",
       headers: { "Idempotency-Key": crypto.randomUUID() },
       body: JSON.stringify({
-        sale_id: input.saleId,
-        reason: input.reason,
-        items: [
-          {
-            sale_item_id: saleItemId,
-            quantity: input.quantity.toFixed(3),
-          },
-        ],
+        sale_id: saleId,
+        reason,
+        items: items.map((item) => ({
+          sale_item_id: item.saleItemId,
+          quantity: item.quantity.toFixed(3),
+        })),
       }),
     }),
   inviteStaff: async (

@@ -9,6 +9,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(
     DEBUG=(bool, False),
     SESSION_COOKIE_SECURE=(bool, True),
+    DATABASE_CONN_MAX_AGE=(int, 60),
+    DATABASE_SSL_REQUIRE=(bool, False),
+    SECURE_SSL_REDIRECT=(bool, False),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -16,10 +19,17 @@ DEBUG = env("DEBUG", default=False)
 SECRET_KEY = env("SECRET_KEY", default="dev-only-change-me")
 PLATFORM_DOMAIN = env("PLATFORM_DOMAIN", default="workcrest.local")
 PLATFORM_NAME = env("PLATFORM_NAME", default="Workcrest")
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000").rstrip("/")
 
 ALLOWED_HOSTS = env.list(
     "ALLOWED_HOSTS",
-    default=["localhost", "127.0.0.1", ".workcrest.local", "testserver"],
+    default=[
+        "localhost",
+        "127.0.0.1",
+        ".workcrest.local",
+        ".onrender.com",
+        "testserver",
+    ],
 )
 
 INSTALLED_APPS = [
@@ -30,9 +40,11 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.sites",
+    "corsheaders",
     "rest_framework",
     "django_filters",
     "drf_spectacular",
+    "storages",
     "allauth",
     "allauth.account",
     "allauth.headless",
@@ -49,6 +61,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -89,6 +102,10 @@ DATABASES = {
     )
 }
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
+DATABASES["default"]["CONN_MAX_AGE"] = env("DATABASE_CONN_MAX_AGE")
+if env("DATABASE_SSL_REQUIRE") and DATABASES["default"]["ENGINE"].endswith("postgresql"):
+    DATABASES["default"].setdefault("OPTIONS", {})
+    DATABASES["default"]["OPTIONS"].setdefault("sslmode", "require")
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "accounts.User"
@@ -129,11 +146,11 @@ ACCOUNT_RATE_LIMITS = {
 }
 HEADLESS_ONLY = True
 HEADLESS_FRONTEND_URLS = {
-    "account_confirm_email": "http://localhost:3000/auth/verify-email/{key}",
-    "account_reset_password": "http://localhost:3000/auth/reset-password",
-    "account_reset_password_from_key": "http://localhost:3000/auth/reset-password/{key}",
-    "account_signup": "http://localhost:3000/auth/signup",
-    "socialaccount_login_error": "http://localhost:3000/auth/error",
+    "account_confirm_email": f"{FRONTEND_URL}/auth/verify-email/{{key}}",
+    "account_reset_password": f"{FRONTEND_URL}/auth/reset-password",
+    "account_reset_password_from_key": f"{FRONTEND_URL}/auth/reset-password/{{key}}",
+    "account_signup": f"{FRONTEND_URL}/auth/signup",
+    "socialaccount_login_error": f"{FRONTEND_URL}/auth/error",
 }
 
 REST_FRAMEWORK = {
@@ -189,7 +206,23 @@ STORAGES = {
         )
     }
 }
-MEDIA_URL = "/media/"
+MEDIA_STORAGE_BACKEND = env("MEDIA_STORAGE_BACKEND", default="local").lower()
+if MEDIA_STORAGE_BACKEND == "s3":
+    STORAGES["default"] = {"BACKEND": "storages.backends.s3.S3Storage"}
+    AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME")
+    AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY")
+    AWS_S3_ENDPOINT_URL = env("AWS_S3_ENDPOINT_URL")
+    AWS_S3_REGION_NAME = env("AWS_S3_REGION_NAME", default="auto")
+    AWS_S3_ADDRESSING_STYLE = env("AWS_S3_ADDRESSING_STYLE", default="path")
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_DEFAULT_ACL = None
+    AWS_QUERYSTRING_AUTH = env.bool("AWS_QUERYSTRING_AUTH", default=False)
+    AWS_S3_OBJECT_PARAMETERS = {
+        "CacheControl": "max-age=86400",
+    }
+
+MEDIA_URL = env("MEDIA_URL", default="/media/")
 MEDIA_ROOT = BASE_DIR / "media"
 
 SESSION_COOKIE_NAME = "workcrest_session"
@@ -204,6 +237,9 @@ CSRF_TRUSTED_ORIGINS = env.list(
     "CSRF_TRUSTED_ORIGINS",
     default=["http://localhost:3000", "http://127.0.0.1:3000"],
 )
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=CSRF_TRUSTED_ORIGINS)
+CORS_ALLOW_CREDENTIALS = True
+SECURE_SSL_REDIRECT = env("SECURE_SSL_REDIRECT")
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"

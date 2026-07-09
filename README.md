@@ -231,6 +231,23 @@ Mock mode is non-persistent and must not be used for real business data.
 Business records in API mode are stored in Django; browser storage is limited
 to harmless interface preferences such as theme and active location.
 
+## Hosted deployment
+
+The recommended hosted demo stack is:
+
+```text
+Vercel      Next.js frontend
+Render      Django API on a free web service
+Supabase    PostgreSQL database and S3-compatible media storage
+```
+
+Use Supabase for durable data instead of Render free Postgres. Render's free
+database tier expires after 30 days, and Render free web services do not
+preserve uploaded files on local disk.
+
+See [docs/deployment.md](docs/deployment.md) for the exact Render, Vercel, and
+Supabase setup instructions and required environment variables.
+
 ## Tenant and API contract
 
 Key endpoints:
@@ -318,4 +335,3 @@ test database uses SQLite.
 - Configure email delivery, Sentry, logging, metrics, and alerting.
 - Run the complete test suite, PostgreSQL isolation tests, and restoration
   drills.
-

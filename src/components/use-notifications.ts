@@ -3,11 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useBusinessStore } from "@/components/business-store-provider";
+import { usePlatform } from "@/components/platform-provider";
 import { commerceApi } from "@/lib/commerce-api";
 import type { AppNotification, NotificationTone } from "@/lib/business-types";
 import { apiMode } from "@/lib/platform-api";
 
 export function useNotifications() {
+  const { ready } = usePlatform();
   const {
     state,
     markNotificationRead: markLocalRead,
@@ -18,7 +20,7 @@ export function useNotifications() {
   const query = useQuery({
     queryKey: ["notifications"],
     queryFn: ({ signal }) => commerceApi.notifications(signal),
-    enabled: apiMode,
+    enabled: apiMode && ready,
     staleTime: 20_000,
   });
   const invalidate = () =>
@@ -55,7 +57,7 @@ export function useNotifications() {
   return {
     notifications,
     unread: notifications.filter((item) => item.unread).length,
-    loading: apiMode && query.isPending,
+    loading: apiMode && ready && query.isPending,
     markRead: (id: string) => {
       if (apiMode) readMutation.mutate(id);
       else markLocalRead(id);

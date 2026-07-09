@@ -2150,10 +2150,16 @@ export interface components {
             category?: string | null;
             readonly category_name?: string;
             unit?: components["schemas"]["UnitEnum"];
-            /** Format: decimal */
-            selling_price?: string;
-            /** Format: decimal */
-            cost_price?: string;
+            /**
+             * Format: decimal
+             * @default 0.00
+             */
+            selling_price: string;
+            /**
+             * Format: decimal
+             * @default 0.00
+             */
+            cost_price: string;
             /** Format: decimal */
             reorder_level?: string;
             /** Format: decimal */
@@ -2345,9 +2351,15 @@ export interface components {
             category?: string | null;
             readonly category_name: string;
             unit?: components["schemas"]["UnitEnum"];
-            /** Format: decimal */
+            /**
+             * Format: decimal
+             * @default 0.00
+             */
             selling_price: string;
-            /** Format: decimal */
+            /**
+             * Format: decimal
+             * @default 0.00
+             */
             cost_price: string;
             /** Format: decimal */
             reorder_level?: string;

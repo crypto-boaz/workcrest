@@ -1,5 +1,6 @@
 import hashlib
 import json
+import secrets
 from decimal import Decimal
 
 from django.db import IntegrityError, connection, transaction
@@ -32,6 +33,25 @@ from .models import (
 
 def _decimal(value, places="0.001"):
     return Decimal(str(value)).quantize(Decimal(places))
+
+
+def ean13_check_digit(body):
+    digits = [int(character) for character in body]
+    weighted_sum = sum(digits[::2]) + (3 * sum(digits[1::2]))
+    return str((10 - (weighted_sum % 10)) % 10)
+
+
+def is_valid_ean13(value):
+    return (
+        len(value) == 13
+        and value.isdigit()
+        and value[-1] == ean13_check_digit(value[:12])
+    )
+
+
+def generate_internal_ean13():
+    body = "20" + "".join(str(secrets.randbelow(10)) for _ in range(10))
+    return f"{body}{ean13_check_digit(body)}"
 
 
 def payload_hash(payload):

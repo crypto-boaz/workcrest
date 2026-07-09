@@ -22,5 +22,11 @@ services:
         value: "false"
       - key: MEDIA_STORAGE_BACKEND
         value: s3
+      - key: DJANGO_SUPERUSER_EMAIL
+        value: pelumialiu8@gmail.com
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
+      - key: DJANGO_SUPERUSER_FULL_NAME
+        value: Workcrest Owner
       - key: WEB_CONCURRENCY
         value: "2"

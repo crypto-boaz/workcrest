@@ -71,6 +71,9 @@ AWS_S3_ADDRESSING_STYLE=path
 AWS_QUERYSTRING_AUTH=false
 EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
 DEFAULT_FROM_EMAIL=no-reply@workcrest.local
+DJANGO_SUPERUSER_EMAIL=pelumialiu8@gmail.com
+DJANGO_SUPERUSER_PASSWORD=<set-this-in-render-only>
+DJANGO_SUPERUSER_FULL_NAME=Workcrest Owner
 ```
 
 Notes:
@@ -78,6 +81,9 @@ Notes:
 - Render free services sleep after inactivity, so the first API request can be
   slow.
 - The start script runs migrations before Gunicorn starts.
+- The start script also runs `ensure_superuser`, which creates or updates the
+  deployment superuser from `DJANGO_SUPERUSER_EMAIL` and
+  `DJANGO_SUPERUSER_PASSWORD`.
 - Do not use SQLite or Render's free filesystem for production data.
 
 ## 3. Vercel frontend

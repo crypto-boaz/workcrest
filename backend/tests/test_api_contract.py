@@ -240,7 +240,9 @@ def test_customers_and_purchases_are_platform_owner_only(tenant_pair):
     assert customers.json()["message"] == "Only admin access."
 
 
-def test_onboarding_validates_slug_then_provisions_workspace():
+def test_onboarding_validates_slug_then_provisions_workspace(settings):
+    settings.SINGLE_HOST_TENANCY = True
+    settings.FRONTEND_URL = "https://workcrest.vercel.app"
     User = get_user_model()
     owner = User.objects.create_user(
         email="new-owner@example.test",
@@ -282,3 +284,13 @@ def test_onboarding_validates_slug_then_provisions_workspace():
     assert valid_response.status_code == 201
     assert valid_response.json()["organization"]["slug"] == "new-company"
     assert valid_response.json()["tenant_domain"].startswith("new-company.")
+    assert valid_response.json()["single_host_tenancy"] is True
+    assert (
+        valid_response.json()["workspace_url"]
+        == "https://workcrest.vercel.app/dashboard"
+    )
+    assert client.session["active_tenant_slug"] == "new-company"
+    owner.refresh_from_db()
+    assert str(owner.active_organization_id) == (
+        valid_response.json()["organization"]["id"]
+    )

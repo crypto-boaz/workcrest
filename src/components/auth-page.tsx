@@ -238,6 +238,8 @@ export function OnboardingPage() {
       const result = await secureApiRequest<{
         organization: { slug: string };
         tenant_domain: string;
+        workspace_url: string;
+        single_host_tenancy: boolean;
       }>("/api/v1/onboarding/", {
         method: "POST",
         body: JSON.stringify({
@@ -256,7 +258,7 @@ export function OnboardingPage() {
       window.location.assign(
         localHost
           ? "/dashboard"
-          : `${window.location.protocol}//${result.tenant_domain}/dashboard`,
+          : result.workspace_url,
       );
     } catch (requestError) {
       setError(

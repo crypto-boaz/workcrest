@@ -63,6 +63,36 @@ def test_host_tenant_cannot_address_another_tenants_location(tenant_pair):
     assert response.status_code == 404
 
 
+def test_single_host_session_resolves_only_an_accessible_tenant(
+    tenant_pair, settings
+):
+    settings.DEBUG = False
+    settings.SINGLE_HOST_TENANCY = True
+    settings.ALLOWED_HOSTS = ["testserver", "workcrest.vercel.app"]
+    client = APIClient()
+    client.force_login(tenant_pair.owner_a)
+    session = client.session
+    session["active_tenant_slug"] = tenant_pair.organization_b.slug
+    session.save()
+
+    response = client.get(
+        "/api/v1/bootstrap/",
+        HTTP_HOST="workcrest.vercel.app",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["organization"]["id"] == str(
+        tenant_pair.organization_a.id
+    )
+    assert client.session["active_tenant_slug"] == (
+        tenant_pair.organization_a.slug
+    )
+    tenant_pair.owner_a.refresh_from_db()
+    assert tenant_pair.owner_a.active_organization_id == (
+        tenant_pair.organization_a.id
+    )
+
+
 def test_disabled_module_rejects_reads_and_writes(tenant_pair):
     TenantModule.objects.filter(
         organization=tenant_pair.organization_a,

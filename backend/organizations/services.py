@@ -204,6 +204,8 @@ def provision_organization(
         is_owner=True,
         title="Owner",
     )
+    owner.active_organization_id = organization.id
+    owner.save(update_fields=["active_organization_id"])
 
     roles = {}
     for code, capability_codes in ROLE_CAPABILITIES.items():

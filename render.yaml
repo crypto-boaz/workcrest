@@ -14,6 +14,8 @@ services:
         value: "false"
       - key: PLATFORM_NAME
         value: Workcrest
+      - key: SINGLE_HOST_TENANCY
+        value: "true"
       - key: DATABASE_SSL_REQUIRE
         value: "true"
       - key: SESSION_COOKIE_SECURE

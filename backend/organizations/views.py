@@ -162,15 +162,25 @@ class OnboardingView(APIView):
         serializer = OnboardingSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         result = serializer.save()
+        organization = result["organization"]
+        request.session["active_tenant_slug"] = organization.slug
         if settings.DEBUG:
-            request.session["debug_tenant_slug"] = result["organization"].slug
+            request.session["debug_tenant_slug"] = organization.slug
+        tenant_domain = organization.tenantdomain_set.get(
+            is_primary=True
+        ).domain
+        workspace_url = (
+            f"{settings.FRONTEND_URL}/dashboard"
+            if settings.SINGLE_HOST_TENANCY
+            else f"https://{tenant_domain}/dashboard"
+        )
         return Response(
             {
-                "organization": OrganizationSerializer(result["organization"]).data,
+                "organization": OrganizationSerializer(organization).data,
                 "location": LocationSerializer(result["location"]).data,
-                "tenant_domain": result[
-                    "organization"
-                ].tenantdomain_set.get(is_primary=True).domain,
+                "tenant_domain": tenant_domain,
+                "workspace_url": workspace_url,
+                "single_host_tenancy": settings.SINGLE_HOST_TENANCY,
             },
             status=status.HTTP_201_CREATED,
         )

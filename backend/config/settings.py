@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import environ
 import sentry_sdk
@@ -17,9 +18,23 @@ environ.Env.read_env(BASE_DIR / ".env")
 
 DEBUG = env("DEBUG", default=False)
 SECRET_KEY = env("SECRET_KEY", default="dev-only-change-me")
-PLATFORM_DOMAIN = env("PLATFORM_DOMAIN", default="workcrest.local")
+
+
+def normalize_platform_domain(value):
+    raw_value = str(value).strip()
+    parsed = urlsplit(raw_value if "://" in raw_value else f"//{raw_value}")
+    return (parsed.hostname or raw_value).strip(".").lower()
+
+
+PLATFORM_DOMAIN = normalize_platform_domain(
+    env("PLATFORM_DOMAIN", default="workcrest.local")
+)
 PLATFORM_NAME = env("PLATFORM_NAME", default="Workcrest")
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000").rstrip("/")
+SINGLE_HOST_TENANCY = env.bool(
+    "SINGLE_HOST_TENANCY",
+    default=PLATFORM_DOMAIN.endswith(".vercel.app"),
+)
 
 ALLOWED_HOSTS = env.list(
     "ALLOWED_HOSTS",

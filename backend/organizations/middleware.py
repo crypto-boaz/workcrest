@@ -2,6 +2,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from .models import Membership, Organization, TenantDomain
+from .tenancy import organization_context
 
 
 class TenantResolutionMiddleware:
@@ -52,6 +53,47 @@ class TenantResolutionMiddleware:
         if hostname.endswith(suffix):
             slug = hostname[: -len(suffix)]
             return Organization.objects.filter(slug=slug).first()
+
+        if settings.SINGLE_HOST_TENANCY and request.user.is_authenticated:
+            active_slug = request.session.get("active_tenant_slug")
+            candidates = []
+            if active_slug:
+                session_organization = Organization.objects.filter(
+                    slug=active_slug
+                ).first()
+                if session_organization:
+                    candidates.append(session_organization)
+            if request.user.active_organization_id:
+                user_organization = Organization.objects.filter(
+                    id=request.user.active_organization_id
+                ).first()
+                if user_organization and all(
+                    candidate.id != user_organization.id
+                    for candidate in candidates
+                ):
+                    candidates.append(user_organization)
+
+            for organization in candidates:
+                with organization_context(organization.id):
+                    has_access = Membership.objects.filter(
+                        organization=organization,
+                        user=request.user,
+                        status=Membership.Status.ACTIVE,
+                    ).exists()
+                if not has_access:
+                    continue
+
+                request.session["active_tenant_slug"] = organization.slug
+                if request.user.active_organization_id != organization.id:
+                    request.user.active_organization_id = organization.id
+                    request.user.save(
+                        update_fields=["active_organization_id"]
+                    )
+                return organization
+
+            if active_slug:
+                request.session.pop("active_tenant_slug", None)
+            return None
         return None
 
 

@@ -31,6 +31,7 @@ class User(AbstractUser):
     phone = models.CharField(max_length=32, blank=True)
     is_platform_staff = models.BooleanField(default=False)
     last_security_event_at = models.DateTimeField(null=True, blank=True)
+    active_organization_id = models.UUIDField(null=True, blank=True)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["full_name"]

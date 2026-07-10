@@ -53,9 +53,10 @@ SECRET_KEY=<strong-random-secret>
 DATABASE_URL=<supabase-postgres-url>
 DATABASE_SSL_REQUIRE=true
 ALLOWED_HOSTS=<your-render-service>.onrender.com,.onrender.com
-PLATFORM_DOMAIN=<your-frontend-domain>
+PLATFORM_DOMAIN=<your-frontend-host-without-https>
 PLATFORM_NAME=Workcrest
 FRONTEND_URL=https://<your-vercel-domain>
+SINGLE_HOST_TENANCY=true
 CSRF_TRUSTED_ORIGINS=https://<your-vercel-domain>,https://*.vercel.app
 CORS_ALLOWED_ORIGINS=https://<your-vercel-domain>
 SESSION_COOKIE_SECURE=true
@@ -110,6 +111,16 @@ BACKEND_URL=https://<your-render-service>.onrender.com
 The frontend calls `/api/...` on its own Vercel origin. `next.config.ts`
 rewrites those requests to Render, which lets auth and CSRF cookies behave like
 first-party cookies in the browser.
+
+Vercel's default `*.vercel.app` domain does not provide nested wildcard tenant
+hosts. Keep `SINGLE_HOST_TENANCY=true` while using that domain. Every company
+uses the same frontend host, and Django selects the active company from the
+authenticated server-side session while still enforcing membership and tenant
+isolation. Set `PLATFORM_DOMAIN` to a hostname only, never a full URL.
+
+After adding a custom base domain and wildcard DNS/domain mapping, set
+`SINGLE_HOST_TENANCY=false`. Tenant workspaces can then use addresses such as
+`company.example.com`.
 
 ## 4. Post-deploy checks
 

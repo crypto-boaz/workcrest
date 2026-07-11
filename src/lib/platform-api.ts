@@ -10,6 +10,15 @@ export const apiMode =
   process.env.NODE_ENV !== "test" &&
   process.env.NEXT_PUBLIC_DATA_MODE !== "mock";
 
+type SessionContext = {
+  authenticated: boolean;
+  csrf_token: string;
+  user: unknown | null;
+};
+
+let csrfTokenCache: string | null = null;
+let csrfTokenRequest: Promise<string> | null = null;
+
 export function isEmailVerificationPending(payload: ApiErrorPayload) {
   return Boolean(
     payload.data?.flows?.some(
@@ -99,10 +108,18 @@ export async function apiRequest<T>(
 }
 
 export async function getCsrfToken(): Promise<string> {
-  const context = await apiRequest<{ csrf_token: string }>(
+  if (csrfTokenCache) return csrfTokenCache;
+  csrfTokenRequest ??= apiRequest<SessionContext>(
     "/api/v1/session/context/",
-  );
-  return context.csrf_token;
+  )
+    .then((context) => {
+      csrfTokenCache = context.csrf_token;
+      return context.csrf_token;
+    })
+    .finally(() => {
+      csrfTokenRequest = null;
+    });
+  return csrfTokenRequest;
 }
 
 export async function secureApiRequest<T>(
@@ -112,16 +129,25 @@ export async function secureApiRequest<T>(
   const csrfToken = await getCsrfToken();
   const headers = new Headers(init.headers);
   headers.set("X-CSRFToken", csrfToken);
-  return apiRequest<T>(path, { ...init, headers });
+  try {
+    return await apiRequest<T>(path, { ...init, headers });
+  } catch (error) {
+    if (!(error instanceof PlatformApiError) || error.status !== 403) {
+      throw error;
+    }
+    csrfTokenCache = null;
+    const refreshedToken = await getCsrfToken();
+    headers.set("X-CSRFToken", refreshedToken);
+    return apiRequest<T>(path, { ...init, headers });
+  }
 }
 
 export const platformApi = {
   sessionContext: () =>
-    apiRequest<{
-      authenticated: boolean;
-      csrf_token: string;
-      user: unknown | null;
-    }>("/api/v1/session/context/"),
+    apiRequest<SessionContext>("/api/v1/session/context/").then((context) => {
+      csrfTokenCache = context.csrf_token;
+      return context;
+    }),
   manifest: () => apiRequest<TenantManifest>("/api/v1/tenant-manifest/"),
   bootstrap: () => apiRequest<TenantBootstrap>("/api/v1/bootstrap/"),
   companySettings: () =>
@@ -147,6 +173,9 @@ export const platformApi = {
     secureApiRequest<unknown>("/api/v1/auth/browser/v1/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
+    }).then((result) => {
+      csrfTokenCache = null;
+      return result;
     }),
   reauthenticate: (password: string) =>
     secureApiRequest<unknown>(
@@ -158,13 +187,15 @@ export const platformApi = {
     ),
   signup: async (email: string, password: string) => {
     try {
-      return await secureApiRequest<unknown>(
+      const result = await secureApiRequest<unknown>(
         "/api/v1/auth/browser/v1/auth/signup",
         {
           method: "POST",
           body: JSON.stringify({ email, password }),
         },
       );
+      csrfTokenCache = null;
+      return result;
     } catch (error) {
       if (
         error instanceof PlatformApiError &&
@@ -177,13 +208,15 @@ export const platformApi = {
   },
   verifyEmail: async (key: string) => {
     try {
-      return await secureApiRequest<unknown>(
+      const result = await secureApiRequest<unknown>(
         "/api/v1/auth/browser/v1/auth/email/verify",
         {
           method: "POST",
           body: JSON.stringify({ key }),
         },
       );
+      csrfTokenCache = null;
+      return result;
     } catch (error) {
       if (
         error instanceof PlatformApiError &&
@@ -208,6 +241,8 @@ export const platformApi = {
         return undefined;
       }
       throw error;
+    } finally {
+      csrfTokenCache = null;
     }
   },
 };

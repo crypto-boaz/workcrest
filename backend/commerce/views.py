@@ -164,7 +164,7 @@ class ProductViewSet(CommerceViewSet):
                     break
             if not barcode:
                 raise ValidationError(
-                    {"barcode": "A unique EAN-13 barcode could not be generated."}
+                    {"barcode": "A unique internal barcode could not be generated."}
                 )
         product = serializer.save(
             organization=self.organization,
@@ -464,6 +464,11 @@ class SaleViewSet(CommerceViewSet):
             payment_reference=data.get("payment_reference", ""),
             idempotency_key=idempotency_key,
             request=request,
+        )
+        sale = (
+            Sale.objects.select_related("customer", "cashier")
+            .prefetch_related("items", "payments")
+            .get(pk=sale.pk)
         )
         payload = SaleSerializer(sale, context={"request": request}).data
         response_status = status.HTTP_200_OK if replayed else status.HTTP_201_CREATED

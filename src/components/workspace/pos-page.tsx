@@ -16,7 +16,7 @@ import {
   UserRound,
   WalletCards,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -29,7 +29,7 @@ import type {
   Product,
   Sale,
 } from "@/lib/business-types";
-import { commerceApi } from "@/lib/commerce-api";
+import { commerceApi, type ApiProduct } from "@/lib/commerce-api";
 import { apiMode } from "@/lib/platform-api";
 import { cn, formatCurrency, formatDate, formatTime } from "@/lib/utils";
 import {
@@ -42,6 +42,7 @@ import {
 } from "@/components/workspace/workspace-ui";
 
 export function PosPage() {
+  const queryClient = useQueryClient();
   const {
     state,
     completeSale,
@@ -67,8 +68,10 @@ export function PosPage() {
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
 
+  const productQueryKey = ["products", currentLocation.id, "pos"];
+
   const apiProductsQuery = useQuery({
-    queryKey: ["products", currentLocation.id, "pos"],
+    queryKey: productQueryKey,
     queryFn: ({ signal }) =>
       commerceApi.products(currentLocation.id, "", signal),
     enabled: apiMode && ready,
@@ -240,6 +243,7 @@ export function PosPage() {
     try {
       let sale: Sale;
       if (apiMode) {
+        const soldItems = [...cart];
         const result = await commerceApi.checkout(currentLocation.id, {
           items: cart.map((item) => ({
             product_id: item.productId,
@@ -280,10 +284,34 @@ export function PosPage() {
           cashier:
             result.cashier_name || bootstrap.user.full_name || "Team member",
         };
-        await Promise.all([
+        const soldQuantities = new Map(
+          soldItems.map((item) => [item.productId, item.quantity]),
+        );
+        queryClient.setQueryData<{ results?: ApiProduct[] }>(
+          productQueryKey,
+          (current) =>
+            current
+              ? {
+                  ...current,
+                  results: current.results?.map((product) => {
+                    const sold = soldQuantities.get(product.id ?? "");
+                    if (!sold) return product;
+                    const nextQuantity = Math.max(
+                      0,
+                      Number(product.stock_quantity ?? 0) - sold,
+                    );
+                    return {
+                      ...product,
+                      stock_quantity: nextQuantity.toFixed(3),
+                    };
+                  }),
+                }
+              : current,
+        );
+        void Promise.all([
           apiProductsQuery.refetch(),
           refreshBusinessData(),
-        ]);
+        ]).catch(() => undefined);
       } else {
         sale = completeSale({
           items: cart,

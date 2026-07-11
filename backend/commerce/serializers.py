@@ -28,7 +28,7 @@ from .models import (
     Supplier,
     TransferItem,
 )
-from .services import is_valid_ean13, next_document_number
+from .services import next_document_number
 
 
 MONEY_FIELD = DecimalField(max_digits=18, decimal_places=2)
@@ -103,23 +103,23 @@ class ProductSerializer(serializers.ModelSerializer):
         value = value.strip()
         if not value:
             return ""
-        if self.instance is None or value != self.instance.barcode:
-            if not is_valid_ean13(value):
-                raise serializers.ValidationError(
-                    "Enter a valid 13-digit EAN-13 barcode."
-                )
-        view = self.context["view"]
-        products = Product.objects.filter(
-            organization=view.organization,
-            location=view.location,
-            barcode=value,
-        )
-        if self.instance is not None:
-            products = products.exclude(id=self.instance.id)
-        if products.exists():
+        if any(ord(character) < 32 or ord(character) == 127 for character in value):
             raise serializers.ValidationError(
-                "This barcode is already assigned to another product."
+                "Barcode cannot contain control characters."
             )
+        if self.instance is None or value != self.instance.barcode:
+            view = self.context["view"]
+            products = Product.objects.filter(
+                organization=view.organization,
+                location=view.location,
+                barcode=value,
+            )
+            if self.instance is not None:
+                products = products.exclude(id=self.instance.id)
+            if products.exists():
+                raise serializers.ValidationError(
+                    "This barcode is already assigned to another product."
+                )
         return value
 
     def validate_sku(self, value):

@@ -216,6 +216,16 @@ class Sale(LocationOwnedModel):
             )
         ]
         ordering = ["-completed_at"]
+        indexes = [
+            models.Index(
+                fields=["organization", "location", "status", "-completed_at"],
+                name="comm_sale_status_time_idx",
+            ),
+            models.Index(
+                fields=["organization", "location", "-completed_at"],
+                name="comm_sale_time_idx",
+            ),
+        ]
 
 
 class SaleItem(LocationOwnedModel):
@@ -424,6 +434,16 @@ class CustomerLedgerEntry(LocationOwnedModel):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["organization", "location", "kind"],
+                name="comm_cust_ledger_kind_idx",
+            ),
+            models.Index(
+                fields=["organization", "location", "-created_at"],
+                name="comm_cust_ledger_time_idx",
+            ),
+        ]
 
     def save(self, *args, **kwargs):
         if not self._state.adding:
@@ -450,6 +470,16 @@ class SupplierLedgerEntry(LocationOwnedModel):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["organization", "location", "kind"],
+                name="comm_supp_ledger_kind_idx",
+            ),
+            models.Index(
+                fields=["organization", "location", "-created_at"],
+                name="comm_supp_ledger_time_idx",
+            ),
+        ]
 
     def save(self, *args, **kwargs):
         if not self._state.adding:
@@ -481,3 +511,12 @@ class Expense(LocationOwnedModel):
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL
     )
     custom_data = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-incurred_at"]
+        indexes = [
+            models.Index(
+                fields=["organization", "location", "-incurred_at"],
+                name="comm_expense_time_idx",
+            ),
+        ]

@@ -4,6 +4,7 @@ import type {
   CustomerInput,
   ExpenseInput,
   PaymentMethod,
+  Product,
   ProductInput,
   PurchaseInput,
   StaffRole,
@@ -15,6 +16,9 @@ import type { TenantBootstrap } from "@/lib/platform-types";
 type Page<T> = {
   results?: T[];
 };
+
+type ApiProduct = components["schemas"]["Product"];
+type ApiCategory = components["schemas"]["Category"];
 
 const page = <T>(path: string) =>
   apiRequest<Page<T>>(path).catch(() => ({ results: [] }));
@@ -31,6 +35,23 @@ const roleName = (value?: string): StaffRole => {
   }
   return "Manager";
 };
+
+export function mapApiProduct(product: ApiProduct): Product {
+  return {
+    id: product.id ?? "",
+    name: product.name ?? "Product",
+    sku: product.sku ?? "",
+    barcode: product.barcode ?? "",
+    qrIdentifier: product.qr_identifier,
+    category: product.category_name ?? "Uncategorised",
+    price: Number(product.selling_price ?? 0),
+    cost: Number(product.cost_price ?? 0),
+    stock: Number(product.stock_quantity ?? 0),
+    reorderLevel: Number(product.reorder_level ?? 0),
+    status: product.status ?? "active",
+    updatedAt: product.updated_at ?? new Date().toISOString(),
+  };
+}
 
 export async function loadBusinessState(
   locationId: string,
@@ -115,20 +136,7 @@ export async function loadBusinessState(
   }));
 
   return {
-    products: (products.results ?? []).map((product) => ({
-      id: product.id ?? "",
-      name: product.name ?? "Product",
-      sku: product.sku ?? "",
-      barcode: product.barcode ?? "",
-      qrIdentifier: product.qr_identifier,
-      category: product.category_name ?? "Uncategorised",
-      price: Number(product.selling_price ?? 0),
-      cost: Number(product.cost_price ?? 0),
-      stock: Number(product.stock_quantity ?? 0),
-      reorderLevel: Number(product.reorder_level ?? 0),
-      status: product.status ?? "active",
-      updatedAt: product.updated_at ?? new Date().toISOString(),
-    })),
+    products: (products.results ?? []).map(mapApiProduct),
     customers: (customers.results ?? []).map((customer) => ({
       id: customer.id ?? "",
       name: customer.name ?? "Customer",
@@ -270,34 +278,60 @@ export async function loadBusinessState(
   };
 }
 
+const categoryCache = new Map<string, string>();
+const categoryListRequests = new Map<string, Promise<Page<ApiCategory>>>();
+
+function categoryKey(locationId: string, name: string) {
+  return `${locationId}:${name.trim().toLowerCase()}`;
+}
+
 async function ensureCategory(locationId: string, name: string) {
-  const categories = await apiRequest<
-    Page<components["schemas"]["Category"]>
-  >(locationPath(locationId, "categories/?page_size=100"));
+  const safeName = name.trim() || "Other";
+  const key = categoryKey(locationId, safeName);
+  const cached = categoryCache.get(key);
+  if (cached) return cached;
+
+  let categoriesRequest = categoryListRequests.get(locationId);
+  if (!categoriesRequest) {
+    categoriesRequest = apiRequest<Page<ApiCategory>>(
+      locationPath(locationId, "categories/?page_size=100"),
+    );
+    categoryListRequests.set(locationId, categoriesRequest);
+  }
+  const categories = await categoriesRequest;
+  for (const category of categories.results ?? []) {
+    if (category.id && category.name) {
+      categoryCache.set(categoryKey(locationId, category.name), category.id);
+    }
+  }
   const existing = categories.results?.find(
-    (category) => category.name?.toLowerCase() === name.toLowerCase(),
+    (category) => category.name?.toLowerCase() === safeName.toLowerCase(),
   );
   if (existing?.id) return existing.id;
   const slug =
-    name
+    safeName
       .toLowerCase()
       .trim()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/(^-|-$)/g, "") || "general";
-  const category = await secureApiRequest<components["schemas"]["Category"]>(
+  const category = await secureApiRequest<ApiCategory>(
     locationPath(locationId, "categories/"),
     {
       method: "POST",
-      body: JSON.stringify({ name, slug, is_active: true }),
+      body: JSON.stringify({ name: safeName, slug, is_active: true }),
     },
   );
+  if (!category.id) throw new Error("Category could not be created.");
+  categoryCache.set(key, category.id);
   return category.id;
 }
 
 export const businessApi = {
   createProduct: async (locationId: string, input: ProductInput) => {
     const category = await ensureCategory(locationId, input.category);
-    return secureApiRequest(locationPath(locationId, "products/"), {
+    const product = await secureApiRequest<ApiProduct>(
+      locationPath(locationId, "products/"),
+      {
       method: "POST",
       body: JSON.stringify({
         name: input.name,
@@ -311,7 +345,9 @@ export const businessApi = {
         opening_quantity: input.stock.toFixed(3),
         custom_data: {},
       }),
-    });
+      },
+    );
+    return mapApiProduct(product);
   },
   updateProduct: async (
     locationId: string,
@@ -319,29 +355,33 @@ export const businessApi = {
     input: ProductInput,
   ) => {
     const category = await ensureCategory(locationId, input.category);
-    return secureApiRequest(locationPath(locationId, `products/${id}/`), {
-      method: "PATCH",
-      body: JSON.stringify({
-        name: input.name,
-        sku: input.sku,
-        barcode: input.barcode,
-        category,
-        selling_price: input.price.toFixed(2),
-        cost_price: input.cost.toFixed(2),
-        reorder_level: input.reorderLevel.toFixed(3),
-        custom_data: {},
-      }),
-    });
+    const product = await secureApiRequest<ApiProduct>(
+      locationPath(locationId, `products/${id}/`),
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: input.name,
+          sku: input.sku,
+          barcode: input.barcode,
+          category,
+          selling_price: input.price.toFixed(2),
+          cost_price: input.cost.toFixed(2),
+          reorder_level: input.reorderLevel.toFixed(3),
+          custom_data: {},
+        }),
+      },
+    );
+    return mapApiProduct(product);
   },
   setProductStatus: (
     locationId: string,
     id: string,
     status: "active" | "archived",
   ) =>
-    secureApiRequest(locationPath(locationId, `products/${id}/`), {
+    secureApiRequest<ApiProduct>(locationPath(locationId, `products/${id}/`), {
       method: "PATCH",
       body: JSON.stringify({ status }),
-    }),
+    }).then(mapApiProduct),
   adjustStock: (
     locationId: string,
     id: string,

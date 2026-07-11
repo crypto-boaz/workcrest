@@ -101,6 +101,62 @@ def test_custom_fields_reject_unknown_and_validate_configured_values(
     assert is_valid_ean13(created_product.barcode)
 
 
+def test_product_accepts_flexible_manual_barcodes_and_keeps_uniqueness(
+    tenant_pair,
+):
+    client = APIClient()
+    client.force_authenticate(tenant_pair.owner_a)
+    url = f"/api/v1/locations/{tenant_pair.location_a.id}/products/"
+    common = {
+        "unit": "item",
+        "selling_price": "1000.00",
+        "cost_price": "600.00",
+        "reorder_level": "2.000",
+        "custom_data": {},
+    }
+
+    short_barcode = client.post(
+        url,
+        {
+            **common,
+            "name": "Flexible Short Barcode",
+            "sku": "FLEX-SHORT",
+            "barcode": "A12-LOCAL",
+        },
+        format="json",
+        HTTP_X_TENANT_SLUG=tenant_pair.organization_a.slug,
+    )
+    long_barcode = client.post(
+        url,
+        {
+            **common,
+            "name": "Flexible Long Barcode",
+            "sku": "FLEX-LONG",
+            "barcode": "1234567890123456789012345",
+        },
+        format="json",
+        HTTP_X_TENANT_SLUG=tenant_pair.organization_a.slug,
+    )
+    duplicate = client.post(
+        url,
+        {
+            **common,
+            "name": "Duplicate Barcode",
+            "sku": "FLEX-DUP",
+            "barcode": "A12-LOCAL",
+        },
+        format="json",
+        HTTP_X_TENANT_SLUG=tenant_pair.organization_a.slug,
+    )
+
+    assert short_barcode.status_code == 201
+    assert short_barcode.json()["barcode"] == "A12-LOCAL"
+    assert long_barcode.status_code == 201
+    assert long_barcode.json()["barcode"] == "1234567890123456789012345"
+    assert duplicate.status_code == 400
+    assert "barcode" in duplicate.json()["field_errors"]
+
+
 def test_location_scoped_role_does_not_grant_other_location_access(tenant_pair):
     User = get_user_model()
     employee = User.objects.create_user(

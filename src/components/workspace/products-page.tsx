@@ -377,15 +377,15 @@ export function ProductsPage() {
             </FormField>
             <FormField
               label="Barcode"
-              hint="Optional. Leave blank and Workcrest will generate a valid EAN-13 barcode."
+              hint="Optional. Leave blank and Workcrest will generate one."
             >
               <input
                 className={inputClass}
                 value={form.barcode}
                 onChange={(event) =>
-                  setForm({ ...form, barcode: event.target.value.trim() })
+                  setForm({ ...form, barcode: event.target.value })
                 }
-                placeholder="e.g. 0123456789012"
+                placeholder="Scan or enter any product barcode"
               />
             </FormField>
             <FormField label="Category">

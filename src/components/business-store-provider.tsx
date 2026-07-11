@@ -18,6 +18,7 @@ import type {
   CustomerInput,
   ExpenseInput,
   HeldSale,
+  Product,
   ProductInput,
   PurchaseInput,
   ReturnInput,
@@ -220,12 +221,30 @@ export function BusinessStoreProvider({
     [],
   );
 
+  const upsertProduct = useCallback((product: Product, prepend = false) => {
+    setState((current) => {
+      const existingIndex = current.products.findIndex(
+        (item) => item.id === product.id,
+      );
+      if (existingIndex >= 0 && !prepend) {
+        const products = [...current.products];
+        products[existingIndex] = product;
+        return { ...current, products };
+      }
+      const existing = current.products.filter((item) => item.id !== product.id);
+      return {
+        ...current,
+        products: prepend ? [product, ...existing] : [...existing, product],
+      };
+    });
+  }, []);
+
   const addProduct = useCallback(
     (input: ProductInput) => {
       if (apiMode && platform) {
         void businessApi
           .createProduct(platform.currentLocation.id, input)
-          .then(refreshBusinessState)
+          .then((product) => upsertProduct(product, true))
           .then(() =>
             showToast(
               "Product added",
@@ -255,7 +274,7 @@ export function BusinessStoreProvider({
       }));
       showToast("Product added", `${input.name} is now in your catalogue.`);
     },
-    [platform, refreshBusinessState, showToast],
+    [platform, showToast, upsertProduct],
   );
 
   const updateProduct = useCallback(
@@ -265,17 +284,19 @@ export function BusinessStoreProvider({
         const stockDelta = input.stock - (existing?.stock ?? input.stock);
         void businessApi
           .updateProduct(platform.currentLocation.id, id, input)
-          .then(() =>
+          .then((product) =>
             stockDelta
-              ? businessApi.adjustStock(
-                  platform.currentLocation.id,
-                  id,
-                  stockDelta,
-                  "Product stock edited",
-                )
-              : undefined,
+              ? businessApi
+                  .adjustStock(
+                    platform.currentLocation.id,
+                    id,
+                    stockDelta,
+                    "Product stock edited",
+                  )
+                  .then(() => ({ ...product, stock: input.stock }))
+              : product,
           )
-          .then(refreshBusinessState)
+          .then((product) => upsertProduct(product))
           .then(() => showToast("Product updated", `${input.name} was saved.`))
           .catch((error) =>
             showToast(
@@ -300,7 +321,7 @@ export function BusinessStoreProvider({
       }));
       showToast("Product updated", `${input.name} was saved.`);
     },
-    [platform, refreshBusinessState, showToast, state.products],
+    [platform, showToast, state.products, upsertProduct],
   );
 
   const archiveProduct = useCallback(
@@ -312,7 +333,7 @@ export function BusinessStoreProvider({
           product.status === "active" ? "archived" : "active";
         void businessApi
           .setProductStatus(platform.currentLocation.id, id, nextStatus)
-          .then(refreshBusinessState)
+          .then((updatedProduct) => upsertProduct(updatedProduct))
           .then(() => showToast("Product status changed"))
           .catch((error) =>
             showToast(
@@ -337,7 +358,7 @@ export function BusinessStoreProvider({
       }));
       showToast("Product status changed");
     },
-    [platform, refreshBusinessState, showToast, state.products],
+    [platform, showToast, state.products, upsertProduct],
   );
 
   const addCustomer = useCallback(

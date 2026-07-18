@@ -10,7 +10,7 @@ import {
   Plus,
   Warehouse,
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useDeferredValue, useMemo, useState } from "react";
 
 import { useBusinessStore } from "@/components/business-store-provider";
 import { usePlatform } from "@/components/platform-provider";
@@ -65,6 +65,7 @@ export function ProductsPage() {
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<ProductInput>(emptyProduct);
   const [skuEdited, setSkuEdited] = useState(false);
+  const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
   const filtered = useMemo(
     () =>
@@ -77,7 +78,7 @@ export function ProductsPage() {
         ]
           .join(" ")
           .toLowerCase()
-          .includes(query.toLowerCase());
+          .includes(deferredQuery);
         const matchesStock =
           stockFilter === "all" ||
           (stockFilter === "out" && product.stock === 0) ||
@@ -88,7 +89,7 @@ export function ProductsPage() {
           (stockFilter === "archived" && product.status === "archived");
         return matchesQuery && matchesStock;
       }),
-    [query, state.products, stockFilter],
+    [deferredQuery, state.products, stockFilter],
   );
 
   const inventoryValue = state.products.reduce(

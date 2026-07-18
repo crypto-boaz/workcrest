@@ -239,25 +239,62 @@ export function BusinessStoreProvider({
     });
   }, []);
 
+  const replaceProduct = useCallback((temporaryId: string, product: Product) => {
+    setState((current) => {
+      const products = current.products.map((item) =>
+        item.id === temporaryId ? product : item,
+      );
+      if (!products.some((item) => item.id === product.id)) {
+        products.unshift(product);
+      }
+      return {
+        ...current,
+        products: products.filter(
+          (item, index, list) =>
+            list.findIndex((entry) => entry.id === item.id) === index,
+        ),
+      };
+    });
+  }, []);
+
+  const removeProduct = useCallback((id: string) => {
+    setState((current) => ({
+      ...current,
+      products: current.products.filter((product) => product.id !== id),
+    }));
+  }, []);
+
   const addProduct = useCallback(
     (input: ProductInput) => {
       if (apiMode && platform) {
+        const temporaryId =
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? `pending-${crypto.randomUUID()}`
+            : `pending-${Date.now()}`;
+        const optimisticProduct: Product = {
+          ...input,
+          id: temporaryId,
+          status: "active",
+          updatedAt: new Date().toISOString(),
+        };
+        upsertProduct(optimisticProduct, true);
         void businessApi
           .createProduct(platform.currentLocation.id, input)
-          .then((product) => upsertProduct(product, true))
+          .then((product) => replaceProduct(temporaryId, product))
           .then(() =>
             showToast(
               "Product added",
               `${input.name} is now in your catalogue.`,
             ),
           )
-          .catch((error) =>
+          .catch((error) => {
+            removeProduct(temporaryId);
             showToast(
               "Could not add product",
               error instanceof Error ? error.message : "Try again.",
               "error",
-            ),
-          );
+            );
+          });
         return;
       }
       setState((current) => ({
@@ -274,7 +311,7 @@ export function BusinessStoreProvider({
       }));
       showToast("Product added", `${input.name} is now in your catalogue.`);
     },
-    [platform, showToast, upsertProduct],
+    [platform, removeProduct, replaceProduct, showToast, upsertProduct],
   );
 
   const updateProduct = useCallback(
@@ -282,6 +319,13 @@ export function BusinessStoreProvider({
       if (apiMode && platform) {
         const existing = state.products.find((product) => product.id === id);
         const stockDelta = input.stock - (existing?.stock ?? input.stock);
+        if (existing) {
+          upsertProduct({
+            ...existing,
+            ...input,
+            updatedAt: new Date().toISOString(),
+          });
+        }
         void businessApi
           .updateProduct(platform.currentLocation.id, id, input)
           .then((product) =>
@@ -298,13 +342,14 @@ export function BusinessStoreProvider({
           )
           .then((product) => upsertProduct(product))
           .then(() => showToast("Product updated", `${input.name} was saved.`))
-          .catch((error) =>
+          .catch((error) => {
+            if (existing) upsertProduct(existing);
             showToast(
               "Could not update product",
               error instanceof Error ? error.message : "Try again.",
               "error",
-            ),
-          );
+            );
+          });
         return;
       }
       setState((current) => ({
@@ -331,17 +376,23 @@ export function BusinessStoreProvider({
         if (!product) return;
         const nextStatus =
           product.status === "active" ? "archived" : "active";
+        upsertProduct({
+          ...product,
+          status: nextStatus,
+          updatedAt: new Date().toISOString(),
+        });
         void businessApi
           .setProductStatus(platform.currentLocation.id, id, nextStatus)
           .then((updatedProduct) => upsertProduct(updatedProduct))
           .then(() => showToast("Product status changed"))
-          .catch((error) =>
+          .catch((error) => {
+            upsertProduct(product);
             showToast(
               "Could not change product status",
               error instanceof Error ? error.message : "Try again.",
               "error",
-            ),
-          );
+            );
+          });
         return;
       }
       setState((current) => ({

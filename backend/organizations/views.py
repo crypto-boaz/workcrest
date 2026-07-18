@@ -86,7 +86,9 @@ class TenantManifestView(TenantContextMixin, APIView):
                     "locale": organization.locale,
                     "currency": organization.currency,
                 },
-                "branding": BrandingSerializer(branding).data,
+                "branding": BrandingSerializer(
+                    branding, context={"request": request}
+                ).data,
             }
         )
 
@@ -135,7 +137,9 @@ class BootstrapView(TenantContextMixin, APIView):
                     MembershipSerializer(membership).data if membership else None
                 ),
                 "locations": LocationSerializer(locations, many=True).data,
-                "branding": BrandingSerializer(branding).data,
+                "branding": BrandingSerializer(
+                    branding, context={"request": request}
+                ).data,
                 "modules": ModuleSerializer(modules, many=True).data,
                 "capabilities": sorted(capabilities),
                 "entitlements": entitlement_snapshot(organization),
@@ -354,7 +358,9 @@ class BrandingView(TenantContextMixin, APIView):
 
     @extend_schema(responses=BrandingSerializer)
     def get(self, request):
-        return Response(BrandingSerializer(self.get_object()).data)
+        return Response(
+            BrandingSerializer(self.get_object(), context={"request": request}).data
+        )
 
 
 class CompanySettingsView(TenantContextMixin, APIView):
@@ -370,7 +376,9 @@ class CompanySettingsView(TenantContextMixin, APIView):
     def _payload(self, organization, branding, location):
         return {
             "organization": OrganizationSerializer(organization).data,
-            "branding": BrandingSerializer(branding).data,
+            "branding": BrandingSerializer(
+                branding, context={"request": self.request}
+            ).data,
             "primary_location": LocationSerializer(location).data,
         }
 

@@ -1,7 +1,8 @@
 from django.contrib import admin
 from django.conf import settings
 from django.conf.urls.static import static
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve as serve_media
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
@@ -39,3 +40,14 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+elif settings.MEDIA_STORAGE_BACKEND == "local":
+    # Business logos are public tenant-branding assets. Render's free filesystem
+    # is not a long-term media store, but serving local media here keeps uploads
+    # visible in small/free deployments until S3/Supabase Storage is connected.
+    urlpatterns += [
+        re_path(
+            r"^media/(?P<path>.*)$",
+            serve_media,
+            {"document_root": settings.MEDIA_ROOT},
+        )
+    ]

@@ -146,6 +146,19 @@ class ProductViewSet(CommerceViewSet):
             .select_related("category", "inventory")
         )
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        product = self.get_queryset().get(pk=serializer.instance.pk)
+        response_serializer = self.get_serializer(product)
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(
+            response_serializer.data,
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )
+
     @transaction.atomic
     def perform_create(self, serializer):
         opening_quantity = serializer.validated_data.pop(
@@ -854,7 +867,10 @@ class DashboardView(LocationContextMixin, APIView):
                 },
                 "sales_trend": list(trend),
                 "recent_transactions": SaleSerializer(
-                    sales.select_related("cashier", "customer")[:8], many=True
+                    sales.select_related("cashier", "customer").prefetch_related(
+                        "items", "payments"
+                    )[:8],
+                    many=True,
                 ).data,
                 "stock_alerts": ProductSerializer(low_stock, many=True).data,
             }

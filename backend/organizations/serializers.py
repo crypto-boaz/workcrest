@@ -77,8 +77,15 @@ class BrandingSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.URLField(allow_blank=True))
     def get_logo_url(self, obj) -> str:
         if obj.logo:
-            return obj.logo.url
-        return obj.logo_url
+            url = obj.logo.url
+        else:
+            url = obj.logo_url
+        if not url:
+            return ""
+        request = self.context.get("request")
+        if request is not None and url.startswith("/"):
+            return request.build_absolute_uri(url)
+        return url
 
     def validate_primary_color(self, value):
         if len(value) != 7 or not value.startswith("#"):

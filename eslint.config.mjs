@@ -15,6 +15,9 @@ const eslintConfig = defineConfig([
     "backend/**",
     "ops/**",
     ".venv/**",
+    ".pytest_tmp*/**",
+    ".pytest_cache/**",
+    "test-results/**",
   ]),
 ]);
 

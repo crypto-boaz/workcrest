@@ -33,6 +33,7 @@ import {
 
 import { useBusinessStore } from "@/components/business-store-provider";
 import { usePlatform } from "@/components/platform-provider";
+import { TenantLogo } from "@/components/tenant-logo";
 import { useNotifications } from "@/components/use-notifications";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -700,20 +701,14 @@ export function SettingsPage() {
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-4 rounded-lg border border-[var(--border)] bg-[var(--background)] p-4 sm:col-span-2 sm:flex-row sm:items-center">
-              <div className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-[var(--primary-soft)] text-[var(--primary-soft-foreground)]">
-                {bootstrap.branding.logo_url ? (
-                  <span
-                    role="img"
-                    aria-label={`${bootstrap.branding.display_name} logo`}
-                    className="size-full bg-contain bg-center bg-no-repeat"
-                    style={{
-                      backgroundImage: `url("${bootstrap.branding.logo_url}")`,
-                    }}
-                  />
-                ) : (
+              <TenantLogo
+                src={bootstrap.branding.logo_url}
+                alt={`${bootstrap.branding.display_name} logo`}
+                className="size-16 shrink-0 place-items-center rounded-xl bg-[var(--primary-soft)] p-2 text-[var(--primary-soft-foreground)]"
+                fallback={
                   <Building2 className="size-7" aria-hidden="true" />
-                )}
-              </div>
+                }
+              />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold">Business logo</p>
                 <p className="mt-1 text-xs text-[var(--muted-foreground)]">

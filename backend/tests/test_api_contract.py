@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
-from commerce.models import Product
+from commerce.models import InventoryBalance, Product
 from commerce.services import is_valid_ean13
 from organizations.models import (
     BrandingProfile,
@@ -155,6 +155,33 @@ def test_product_accepts_flexible_manual_barcodes_and_keeps_uniqueness(
     assert long_barcode.json()["barcode"] == "1234567890123456789012345"
     assert duplicate.status_code == 400
     assert "barcode" in duplicate.json()["field_errors"]
+
+
+def test_product_create_response_includes_opening_stock_immediately(
+    tenant_pair,
+):
+    client = APIClient()
+    client.force_authenticate(tenant_pair.owner_a)
+    response = client.post(
+        f"/api/v1/locations/{tenant_pair.location_a.id}/products/",
+        {
+            "name": "Instant Stock Product",
+            "sku": "INSTANT-STOCK",
+            "unit": "item",
+            "selling_price": "1500.00",
+            "cost_price": "900.00",
+            "reorder_level": "2.000",
+            "opening_quantity": "7.000",
+            "custom_data": {},
+        },
+        format="json",
+        HTTP_X_TENANT_SLUG=tenant_pair.organization_a.slug,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["stock_quantity"] == "7.000"
+    balance = InventoryBalance.objects.get(product_id=response.json()["id"])
+    assert balance.quantity == Decimal("7.000")
 
 
 def test_location_scoped_role_does_not_grant_other_location_access(tenant_pair):

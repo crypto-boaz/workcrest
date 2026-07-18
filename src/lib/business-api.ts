@@ -59,11 +59,9 @@ export async function loadBusinessState(
 ): Promise<BusinessState> {
   const [
     products,
-    customers,
     sales,
     held,
     suppliers,
-    purchases,
     returns,
     expenses,
     notifications,
@@ -74,18 +72,12 @@ export async function loadBusinessState(
     page<components["schemas"]["Product"]>(
       locationPath(locationId, "products/?page_size=100"),
     ),
-    page<components["schemas"]["Customer"]>(
-      locationPath(locationId, "customers/?page_size=100"),
-    ),
     page<components["schemas"]["Sale"]>(locationPath(locationId, "sales/")),
     page<components["schemas"]["HeldCart"]>(
       locationPath(locationId, "held-carts/?page_size=100"),
     ),
     page<components["schemas"]["Supplier"]>(
       locationPath(locationId, "suppliers/?page_size=100"),
-    ),
-    page<components["schemas"]["PurchaseOrder"]>(
-      locationPath(locationId, "purchases/?page_size=100"),
     ),
     page<components["schemas"]["ReturnRecord"]>(
       locationPath(locationId, "returns/"),
@@ -104,6 +96,10 @@ export async function loadBusinessState(
     ),
     page<components["schemas"]["Role"]>("/api/v1/roles/?page_size=100"),
   ]);
+  const customers: Page<components["schemas"]["Customer"]> = { results: [] };
+  const purchases: Page<components["schemas"]["PurchaseOrder"]> = {
+    results: [],
+  };
 
   const mappedSales = (sales.results ?? []).map((sale) => ({
     sourceId: sale.id,
@@ -332,19 +328,19 @@ export const businessApi = {
     const product = await secureApiRequest<ApiProduct>(
       locationPath(locationId, "products/"),
       {
-      method: "POST",
-      body: JSON.stringify({
-        name: input.name,
-        sku: input.sku,
-        barcode: input.barcode,
-        category,
-        unit: "item",
-        selling_price: input.price.toFixed(2),
-        cost_price: input.cost.toFixed(2),
-        reorder_level: input.reorderLevel.toFixed(3),
-        opening_quantity: input.stock.toFixed(3),
-        custom_data: {},
-      }),
+        method: "POST",
+        body: JSON.stringify({
+          name: input.name,
+          sku: input.sku,
+          barcode: input.barcode,
+          category,
+          unit: "item",
+          selling_price: input.price.toFixed(2),
+          cost_price: input.cost.toFixed(2),
+          reorder_level: input.reorderLevel.toFixed(3),
+          opening_quantity: input.stock.toFixed(3),
+          custom_data: {},
+        }),
       },
     );
     return mapApiProduct(product);

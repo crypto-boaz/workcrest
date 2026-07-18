@@ -17,11 +17,12 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
 import { useBusinessStore } from "@/components/business-store-provider";
 import { usePlatform } from "@/components/platform-provider";
+import { TenantLogo } from "@/components/tenant-logo";
 import { Button } from "@/components/ui/button";
 import type {
   CartInput,
@@ -29,6 +30,7 @@ import type {
   Product,
   Sale,
 } from "@/lib/business-types";
+import { mapApiProduct } from "@/lib/business-api";
 import { commerceApi, type ApiProduct } from "@/lib/commerce-api";
 import { apiMode } from "@/lib/platform-api";
 import { cn, formatCurrency, formatDate, formatTime } from "@/lib/utils";
@@ -48,7 +50,6 @@ export function PosPage() {
     completeSale,
     holdSale,
     removeHeldSale,
-    refresh: refreshBusinessData,
     showToast,
   } = useBusinessStore();
   const {
@@ -67,6 +68,7 @@ export function PosPage() {
   const [heldOpen, setHeldOpen] = useState(false);
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
   const productQueryKey = ["products", currentLocation.id, "pos"];
 
@@ -75,76 +77,96 @@ export function PosPage() {
     queryFn: ({ signal }) =>
       commerceApi.products(currentLocation.id, "", signal),
     enabled: apiMode && ready,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    placeholderData: (previous) => previous,
   });
   const apiCustomersQuery = useQuery({
     queryKey: ["customers", currentLocation.id, "pos"],
     queryFn: ({ signal }) =>
       commerceApi.customers(currentLocation.id, signal),
     enabled: apiMode && ready,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    retry: false,
+    placeholderData: (previous) => previous,
   });
   const apiHeldCartsQuery = useQuery({
     queryKey: ["held-carts", currentLocation.id],
     queryFn: ({ signal }) =>
       commerceApi.heldCarts(currentLocation.id, signal),
     enabled: apiMode && ready,
+    staleTime: 30_000,
+    gcTime: 10 * 60_000,
+    placeholderData: (previous) => previous,
   });
-  const availableProducts: Product[] = apiMode
-    ? (apiProductsQuery.data?.results ?? []).map((product) => ({
-        id: product.id ?? "",
-        name: product.name ?? "Unnamed product",
-        sku: product.sku ?? "",
-        barcode: product.barcode ?? "",
-        qrIdentifier: product.qr_identifier,
-        category: product.category_name ?? "Uncategorised",
-        price: Number(product.selling_price ?? 0),
-        cost: Number(product.cost_price ?? 0),
-        stock: Number(product.stock_quantity ?? 0),
-        reorderLevel: Number(product.reorder_level ?? 0),
-        status: product.status ?? "active",
-        updatedAt: product.updated_at ?? new Date().toISOString(),
-      }))
-    : state.products;
-  const availableCustomers = apiMode
-    ? (apiCustomersQuery.data?.results ?? []).map((customer) => ({
-        id: customer.id ?? "",
-        name: customer.name ?? "Customer",
-      }))
-    : state.customers;
-  const availableHeldSales = apiMode
-    ? (apiHeldCartsQuery.data?.results ?? []).map((held) => ({
-        id: held.id ?? "",
-        customerId: held.customer ?? undefined,
-        items: (held.items ?? []) as Sale["items"],
-        discount: Number(held.discount ?? 0),
-        createdAt: held.created_at ?? new Date().toISOString(),
-      }))
-    : state.heldSales;
+  const availableProducts: Product[] = useMemo(
+    () =>
+      apiMode
+        ? (apiProductsQuery.data?.results ?? []).map(mapApiProduct)
+        : state.products,
+    [apiProductsQuery.data?.results, state.products],
+  );
+  const productsById = useMemo(
+    () => new Map(availableProducts.map((product) => [product.id, product])),
+    [availableProducts],
+  );
+  const availableCustomers = useMemo(
+    () =>
+      apiMode
+        ? (apiCustomersQuery.data?.results ?? []).map((customer) => ({
+            id: customer.id ?? "",
+            name: customer.name ?? "Customer",
+          }))
+        : state.customers,
+    [apiCustomersQuery.data?.results, state.customers],
+  );
+  const availableHeldSales = useMemo(
+    () =>
+      apiMode
+        ? (apiHeldCartsQuery.data?.results ?? []).map((held) => ({
+            id: held.id ?? "",
+            customerId: held.customer ?? undefined,
+            items: (held.items ?? []) as Sale["items"],
+            discount: Number(held.discount ?? 0),
+            createdAt: held.created_at ?? new Date().toISOString(),
+          }))
+        : state.heldSales,
+    [apiHeldCartsQuery.data?.results, state.heldSales],
+  );
 
-  const categories = [
-    "All",
-    ...Array.from(new Set(availableProducts.map((product) => product.category))),
-  ];
-  const products = availableProducts.filter(
-    (product) =>
-      product.status === "active" &&
-      (category === "All" || product.category === category) &&
-      [product.name, product.sku, product.barcode]
-        .join(" ")
-        .toLowerCase()
-        .includes(query.toLowerCase()),
+  const categories = useMemo(
+    () => [
+      "All",
+      ...Array.from(
+        new Set(availableProducts.map((product) => product.category)),
+      ),
+    ],
+    [availableProducts],
+  );
+  const products = useMemo(
+    () =>
+      availableProducts.filter(
+        (product) =>
+          product.status === "active" &&
+          (category === "All" || product.category === category) &&
+          [product.name, product.sku, product.barcode]
+            .join(" ")
+            .toLowerCase()
+            .includes(deferredQuery),
+      ),
+    [availableProducts, category, deferredQuery],
   );
 
   const cartLines = useMemo(
     () =>
       cart
         .map((item) => {
-          const product = availableProducts.find(
-            (entry) => entry.id === item.productId,
-          );
+          const product = productsById.get(item.productId);
           return product ? { ...item, product } : null;
         })
         .filter(Boolean) as Array<CartInput & { product: Product }>,
-    [availableProducts, cart],
+    [cart, productsById],
   );
   const subtotal = cartLines.reduce(
     (sum, line) => sum + line.product.price * line.quantity,
@@ -153,7 +175,8 @@ export function PosPage() {
   const total = Math.max(0, subtotal - discount);
 
   const addToCart = (productId: string) => {
-    const product = availableProducts.find((entry) => entry.id === productId)!;
+    const product = productsById.get(productId);
+    if (!product) return;
     if (product.stock < 1) return;
     setCart((current) => {
       const line = current.find((entry) => entry.productId === productId);
@@ -177,7 +200,7 @@ export function PosPage() {
   };
 
   const updateQuantity = (productId: string, quantity: number) => {
-    const product = availableProducts.find((entry) => entry.id === productId);
+    const product = productsById.get(productId);
     if (!product) return;
     if (quantity <= 0) {
       setCart((current) =>
@@ -308,10 +331,12 @@ export function PosPage() {
                 }
               : current,
         );
-        void Promise.all([
-          apiProductsQuery.refetch(),
-          refreshBusinessData(),
-        ]).catch(() => undefined);
+        window.setTimeout(() => {
+          void Promise.all([
+            apiProductsQuery.refetch(),
+            queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+          ]).catch(() => undefined);
+        }, 250);
       } else {
         sale = completeSale({
           items: cart,
@@ -776,18 +801,16 @@ export function PosPage() {
           <>
             <div id="printable-receipt" className="p-5">
               <div className="text-center">
-                {bootstrap.branding.logo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={bootstrap.branding.logo_url}
-                    alt={`${bootstrap.branding.display_name} logo`}
-                    className="mx-auto size-14 object-contain"
-                  />
-                ) : (
+                <TenantLogo
+                  src={bootstrap.branding.logo_url}
+                  alt={`${bootstrap.branding.display_name} logo`}
+                  className="mx-auto size-14 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  fallback={
                   <span className="mx-auto grid size-11 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                     <Check className="size-5" />
                   </span>
-                )}
+                  }
+                />
                 <p className="mt-3 text-base font-bold">
                   {bootstrap.branding.display_name}
                 </p>

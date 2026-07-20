@@ -48,6 +48,7 @@ export function PosPage() {
   const {
     state,
     completeSale,
+    recordCompletedSale,
     holdSale,
     removeHeldSale,
     showToast,
@@ -76,7 +77,9 @@ export function PosPage() {
     queryKey: productQueryKey,
     queryFn: ({ signal }) =>
       commerceApi.products(currentLocation.id, "", signal),
-    enabled: apiMode && ready,
+    // Products are part of the essential workspace bootstrap. Reusing that
+    // cache avoids a second catalogue request when opening POS.
+    enabled: false,
     staleTime: 60_000,
     gcTime: 10 * 60_000,
     placeholderData: (previous) => previous,
@@ -103,7 +106,7 @@ export function PosPage() {
   const availableProducts: Product[] = useMemo(
     () =>
       apiMode
-        ? (apiProductsQuery.data?.results ?? []).map(mapApiProduct)
+        ? apiProductsQuery.data?.results?.map(mapApiProduct) ?? state.products
         : state.products,
     [apiProductsQuery.data?.results, state.products],
   );
@@ -307,6 +310,7 @@ export function PosPage() {
           cashier:
             result.cashier_name || bootstrap.user.full_name || "Team member",
         };
+        recordCompletedSale(sale);
         const soldQuantities = new Map(
           soldItems.map((item) => [item.productId, item.quantity]),
         );

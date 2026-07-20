@@ -47,6 +47,7 @@ interface BusinessStoreValue {
   archiveProduct: (id: string) => void;
   addCustomer: (input: CustomerInput) => void;
   completeSale: (input: CompleteSaleInput) => Sale;
+  recordCompletedSale: (sale: Sale) => void;
   holdSale: (
     items: CartInput[],
     customerId?: string,
@@ -172,15 +173,20 @@ export function BusinessStoreProvider({
   useEffect(() => {
     if (!apiMode || !platform?.ready) return;
     let active = true;
-    void loadBusinessState(
-      platform.currentLocation.id,
-      platform.bootstrap,
-    )
+    void loadBusinessState(platform.currentLocation.id, platform.bootstrap, {
+      includeSecondary: false,
+    })
       .then((nextState) => {
         if (active) {
           setState(nextState);
           setLoadedScope(activeScope);
           setHydrated(true);
+          // Secondary modules should never delay the first usable dashboard.
+          void loadBusinessState(platform.currentLocation.id, platform.bootstrap)
+            .then((completeState) => {
+              if (active) setState(completeState);
+            })
+            .catch(() => undefined);
         }
       })
       .catch((error) => {
@@ -573,6 +579,27 @@ export function BusinessStoreProvider({
     ],
   );
 
+  const recordCompletedSale = useCallback((sale: Sale) => {
+    setState((current) => {
+      const products = current.products.map((product) => {
+        const sold = sale.items
+          .filter((item) => item.productId === product.id)
+          .reduce((sum, item) => sum + item.quantity, 0);
+        return sold ? { ...product, stock: Math.max(0, product.stock - sold) } : product;
+      });
+      return {
+        ...current,
+        products,
+        sales: [sale, ...current.sales.filter((item) => item.id !== sale.id)],
+        customers: current.customers.map((customer) =>
+          customer.id === sale.customerId
+            ? { ...customer, totalSpent: customer.totalSpent + sale.total, orders: customer.orders + 1 }
+            : customer,
+        ),
+      };
+    });
+  }, []);
+
   const holdSale = useCallback(
     (items: CartInput[], customerId?: string, discount = 0) => {
       if (apiMode && platform) {
@@ -757,13 +784,35 @@ export function BusinessStoreProvider({
               quantity: line.quantity,
             })),
           )
-          .then(refreshBusinessState)
-          .then(() =>
-            showToast(
-              "Return approved",
-              `${totalUnits} unit(s) across ${selectedItems.length} item(s) restored to stock.`,
-            ),
-          )
+          .then(() => {
+            const timestamp = new Date().toISOString();
+            setState((current) => ({
+              ...current,
+              returns: [
+                ...selectedItems.map(({ line, saleItem }, index) => ({
+                  id: `pending-return-${Date.now()}-${index}`,
+                  saleId: sale.id,
+                  productId: saleItem.productId,
+                  itemName: saleItem.name,
+                  customerName: sale.customerName,
+                  quantity: line.quantity,
+                  amount: saleItem.unitPrice * line.quantity,
+                  reason: input.reason,
+                  status: "approved" as const,
+                  createdAt: timestamp,
+                })),
+                ...current.returns,
+              ],
+              products: current.products.map((product) => {
+                const returned = selectedItems
+                  .filter(({ saleItem }) => saleItem.productId === product.id)
+                  .reduce((sum, item) => sum + item.line.quantity, 0);
+                return returned ? { ...product, stock: product.stock + returned } : product;
+              }),
+            }));
+            showToast("Return approved", `${totalUnits} unit(s) across ${selectedItems.length} item(s) restored to stock.`);
+            window.setTimeout(() => void refreshBusinessState(), 300);
+          })
           .catch((error) =>
             showToast(
               "Could not process return",
@@ -885,19 +934,18 @@ export function BusinessStoreProvider({
   const addExpense = useCallback(
     (input: ExpenseInput) => {
       if (apiMode && platform) {
-        void businessApi
-          .createExpense(platform.currentLocation.id, input)
-          .then(refreshBusinessState)
-          .then(() =>
-            showToast("Expense recorded", `${input.title} was added.`),
-          )
-          .catch((error) =>
-            showToast(
-              "Could not record expense",
-              error instanceof Error ? error.message : "Try again.",
-              "error",
-            ),
-          );
+        const temporaryId = `pending-expense-${Date.now()}`;
+        const optimistic = { ...input, id: temporaryId };
+        setState((current) => ({ ...current, expenses: [optimistic, ...current.expenses] }));
+        void businessApi.createExpense(platform.currentLocation.id, input)
+          .then(() => showToast("Expense recorded", `${input.title} was added.`))
+          .catch((error) => {
+            setState((current) => ({
+              ...current,
+              expenses: current.expenses.filter((expense) => expense.id !== temporaryId),
+            }));
+            showToast("Could not record expense", error instanceof Error ? error.message : "Try again.", "error");
+          });
         return;
       }
       setState((current) => ({
@@ -906,7 +954,7 @@ export function BusinessStoreProvider({
       }));
       showToast("Expense recorded", `${input.title} was added.`);
     },
-    [platform, refreshBusinessState, showToast],
+    [platform, showToast],
   );
 
   const markNotificationRead = useCallback((id: string) => {
@@ -949,6 +997,7 @@ export function BusinessStoreProvider({
       archiveProduct,
       addCustomer,
       completeSale,
+      recordCompletedSale,
       holdSale,
       removeHeldSale,
       createPurchase,
@@ -972,6 +1021,7 @@ export function BusinessStoreProvider({
       archiveProduct,
       addCustomer,
       completeSale,
+      recordCompletedSale,
       holdSale,
       removeHeldSale,
       createPurchase,

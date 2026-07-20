@@ -57,6 +57,9 @@ export function ReportsPage() {
   const { state } = useBusinessStore();
   const { bootstrap } = usePlatform();
   const [period, setPeriod] = useState("30");
+  const [transactionQuery, setTransactionQuery] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [referenceTime] = useState(() => Date.now());
 
   const cutoff =
@@ -133,6 +136,15 @@ export function ReportsPage() {
       .reduce((sum, sale) => sum + sale.total, 0),
   }));
 
+  const transactionReport = useMemo(() => {
+    const query = transactionQuery.trim().toLowerCase();
+    return sales.filter((sale) => {
+      const date = sale.createdAt.slice(0, 10);
+      const matchesQuery = !query || [sale.id, sale.customerName, sale.cashier, sale.paymentMethod, ...sale.items.map((item) => item.name)].join(" ").toLowerCase().includes(query);
+      return matchesQuery && (!fromDate || date >= fromDate) && (!toDate || date <= toDate);
+    });
+  }, [fromDate, sales, toDate, transactionQuery]);
+
   const exportReport = () =>
     downloadCsv(`${bootstrap.organization.slug}-report.csv`, [
       ["Metric", "Value"],
@@ -144,6 +156,19 @@ export function ReportsPage() {
       [],
       ["Category", "Revenue"],
       ...categoryRevenue.map((item) => [item.name, item.value]),
+      [],
+      ["Receipt", "Date", "Time", "Product", "Quantity", "Unit price", "Total", "Payment", "Cashier"],
+      ...transactionReport.flatMap((sale) => sale.items.map((item) => [
+        sale.id,
+        formatDate(new Date(sale.createdAt)),
+        formatTime(sale.createdAt),
+        item.name,
+        item.quantity,
+        item.unitPrice,
+        sale.total,
+        sale.paymentMethod,
+        sale.cashier,
+      ])),
     ]);
 
   return (
@@ -323,6 +348,31 @@ export function ReportsPage() {
             </Card>
           );
         })}
+      </section>
+
+      <section className="mt-4">
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-sm)]">
+          <div className="flex flex-col gap-3 border-b border-[var(--border)] p-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-sm font-bold">Transaction detail</h2>
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">Searchable line-item records for the selected reporting period.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <input className={inputClass + " h-9 w-48"} placeholder="Search receipt, product, cashier" value={transactionQuery} onChange={(event) => setTransactionQuery(event.target.value)} />
+              <input aria-label="Transactions from date" type="date" className={inputClass + " h-9 w-auto"} value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
+              <input aria-label="Transactions to date" type="date" className={inputClass + " h-9 w-auto"} value={toDate} onChange={(event) => setToDate(event.target.value)} />
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-left text-xs">
+              <thead><tr className="bg-[var(--surface-subtle)] text-[10px] uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><th className="px-4 py-3">Date / time</th><th className="px-4 py-3">Receipt</th><th className="px-4 py-3">Product</th><th className="px-4 py-3">Qty</th><th className="px-4 py-3">Unit price</th><th className="px-4 py-3">Total</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3">Cashier</th></tr></thead>
+              <tbody>
+                {transactionReport.flatMap((sale) => sale.items.map((item) => <tr key={`${sale.id}-${item.productId}`} className="border-t border-[var(--border)]"><td className="px-4 py-3">{formatDate(new Date(sale.createdAt))}<span className="ml-1 text-[var(--muted-foreground)]">{formatTime(sale.createdAt)}</span></td><td className="px-4 py-3 font-semibold">{sale.id}</td><td className="px-4 py-3">{item.name}<span className="ml-1 text-[var(--muted-foreground)]">{item.sku}</span></td><td className="px-4 py-3">{item.quantity}</td><td className="px-4 py-3">{formatCurrency(item.unitPrice)}</td><td className="px-4 py-3 font-semibold">{formatCurrency(sale.total)}</td><td className="px-4 py-3">{sale.paymentMethod}</td><td className="px-4 py-3">{sale.cashier}</td></tr>))}
+                {!transactionReport.length && <tr><td colSpan={8} className="px-4 py-10 text-center text-[var(--muted-foreground)]">No transactions match these filters.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
     </Workspace>
   );

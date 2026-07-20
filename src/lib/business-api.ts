@@ -56,7 +56,9 @@ export function mapApiProduct(product: ApiProduct): Product {
 export async function loadBusinessState(
   locationId: string,
   bootstrap: TenantBootstrap,
+  options: { includeSecondary?: boolean } = {},
 ): Promise<BusinessState> {
+  const includeSecondary = options.includeSecondary ?? true;
   const [
     products,
     sales,
@@ -76,25 +78,35 @@ export async function loadBusinessState(
     page<components["schemas"]["HeldCart"]>(
       locationPath(locationId, "held-carts/?page_size=100"),
     ),
-    page<components["schemas"]["Supplier"]>(
-      locationPath(locationId, "suppliers/?page_size=100"),
-    ),
-    page<components["schemas"]["ReturnRecord"]>(
-      locationPath(locationId, "returns/"),
-    ),
+    includeSecondary
+      ? page<components["schemas"]["Supplier"]>(
+          locationPath(locationId, "suppliers/?page_size=100"),
+        )
+      : Promise.resolve({ results: [] }),
+    includeSecondary
+      ? page<components["schemas"]["ReturnRecord"]>(
+          locationPath(locationId, "returns/"),
+        )
+      : Promise.resolve({ results: [] }),
     page<components["schemas"]["Expense"]>(
       locationPath(locationId, "expenses/?page_size=100"),
     ),
     page<components["schemas"]["Notification"]>(
       "/api/v1/notifications/",
     ),
-    page<components["schemas"]["Membership"]>(
-      "/api/v1/memberships/?page_size=100",
-    ),
-    page<components["schemas"]["Invitation"]>(
-      "/api/v1/invitations/?page_size=100",
-    ),
-    page<components["schemas"]["Role"]>("/api/v1/roles/?page_size=100"),
+    includeSecondary
+      ? page<components["schemas"]["Membership"]>(
+          "/api/v1/memberships/?page_size=100",
+        )
+      : Promise.resolve({ results: [] }),
+    includeSecondary
+      ? page<components["schemas"]["Invitation"]>(
+          "/api/v1/invitations/?page_size=100",
+        )
+      : Promise.resolve({ results: [] }),
+    includeSecondary
+      ? page<components["schemas"]["Role"]>("/api/v1/roles/?page_size=100")
+      : Promise.resolve({ results: [] }),
   ]);
   const customers: Page<components["schemas"]["Customer"]> = { results: [] };
   const purchases: Page<components["schemas"]["PurchaseOrder"]> = {

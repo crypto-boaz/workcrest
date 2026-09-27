@@ -10,12 +10,16 @@ import {
   Plus,
   Warehouse,
 } from "lucide-react";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useDeferredValue, useMemo, useState } from "react";
 
 import { useBusinessStore } from "@/components/business-store-provider";
 import { usePlatform } from "@/components/platform-provider";
 import { Button } from "@/components/ui/button";
 import type { Product, ProductInput } from "@/lib/business-types";
+import { mapApiProduct } from "@/lib/business-api";
+import { commerceApi } from "@/lib/commerce-api";
+import { apiMode } from "@/lib/platform-api";
 import { formatCurrency } from "@/lib/utils";
 import {
   downloadCsv,
@@ -56,9 +60,10 @@ function formatProductSku(value: string) {
 }
 
 export function ProductsPage() {
+  const queryClient = useQueryClient();
   const { state, addProduct, updateProduct, archiveProduct } =
     useBusinessStore();
-  const { bootstrap } = usePlatform();
+  const { bootstrap, currentLocation } = usePlatform();
   const [query, setQuery] = useState("");
   const [stockFilter, setStockFilter] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
@@ -67,10 +72,36 @@ export function ProductsPage() {
   const [saving, setSaving] = useState(false);
   const [skuEdited, setSkuEdited] = useState(false);
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
+  const catalogQuery = useInfiniteQuery({
+    queryKey: ["catalog-products", currentLocation.id, deferredQuery],
+    queryFn: ({ pageParam, signal }) =>
+      commerceApi.productPage(
+        currentLocation.id,
+        deferredQuery,
+        pageParam,
+        signal,
+      ),
+    initialPageParam: "",
+    getNextPageParam: (lastPage) => lastPage.next || undefined,
+    enabled: apiMode,
+    staleTime: 30_000,
+  });
+  const products = useMemo(
+    () =>
+      apiMode
+        ? catalogQuery.data?.pages.flatMap((page) =>
+            page.results.map(mapApiProduct),
+          ) ?? []
+        : state.products,
+    [catalogQuery.data, state.products],
+  );
+  const totalProducts = apiMode
+    ? (catalogQuery.data?.pages[0]?.count ?? 0)
+    : products.length;
 
   const filtered = useMemo(
     () =>
-      state.products.filter((product) => {
+      products.filter((product) => {
         const matchesQuery = [
           product.name,
           product.sku,
@@ -88,19 +119,24 @@ export function ProductsPage() {
             product.stock <= product.reorderLevel) ||
           (stockFilter === "healthy" && product.stock > product.reorderLevel) ||
           (stockFilter === "archived" && product.status === "archived");
-        return matchesQuery && matchesStock;
+        return (apiMode || matchesQuery) && matchesStock;
       }),
-    [deferredQuery, state.products, stockFilter],
+    [deferredQuery, products, stockFilter],
   );
 
-  const inventoryValue = state.products.reduce(
+  const inventoryValue = products.reduce(
     (sum, product) => sum + product.stock * product.cost,
     0,
   );
-  const low = state.products.filter(
+  const low = products.filter(
     (product) => product.stock > 0 && product.stock <= product.reorderLevel,
   ).length;
-  const out = state.products.filter((product) => product.stock === 0).length;
+  const out = products.filter((product) => product.stock === 0).length;
+
+  const refreshCatalog = () =>
+    queryClient.invalidateQueries({
+      queryKey: ["catalog-products", currentLocation.id],
+    });
 
   const openCreate = () => {
     setEditing(null);
@@ -132,14 +168,22 @@ export function ProductsPage() {
       try {
         if (await updateProduct(editing.id, form, editing.stock, editing.version)) {
           setModalOpen(false);
+          void refreshCatalog();
         }
       } finally {
         setSaving(false);
       }
       return;
     }
-    addProduct(form);
-    setModalOpen(false);
+    setSaving(true);
+    try {
+      if (await addProduct(form)) {
+        setModalOpen(false);
+        void refreshCatalog();
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   const exportProducts = () =>
@@ -174,7 +218,10 @@ export function ProductsPage() {
         description="Manage catalogue pricing, stock levels, and reorder points from one dependable view."
         actions={
           <>
-            <ExportButton onClick={exportProducts} />
+            <ExportButton
+              onClick={exportProducts}
+              label={apiMode ? "Export loaded CSV" : "Export CSV"}
+            />
             <Button onClick={openCreate}>
               <Plus className="size-4" /> Add product
             </Button>
@@ -184,29 +231,29 @@ export function ProductsPage() {
 
       <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatTile
-          label="Inventory value"
+          label={apiMode ? "Loaded inventory value" : "Inventory value"}
           value={formatCurrency(inventoryValue)}
           detail="Based on current unit costs"
           icon={Warehouse}
         />
         <StatTile
-          label="Active products"
-          value={state.products
+          label={apiMode ? "Loaded active products" : "Active products"}
+          value={products
             .filter((product) => product.status === "active")
             .length.toLocaleString()}
-          detail={`${state.products.reduce((sum, product) => sum + product.stock, 0)} units on hand`}
+          detail={`${products.reduce((sum, product) => sum + product.stock, 0)} units on hand`}
           icon={Boxes}
           tone="green"
         />
         <StatTile
-          label="Low stock"
+          label={apiMode ? "Loaded low stock" : "Low stock"}
           value={String(low)}
           detail="At or below reorder level"
           icon={CircleAlert}
           tone="amber"
         />
         <StatTile
-          label="Out of stock"
+          label={apiMode ? "Loaded out of stock" : "Out of stock"}
           value={String(out)}
           detail="Requires replenishment"
           icon={PackagePlus}
@@ -215,10 +262,15 @@ export function ProductsPage() {
       </section>
 
       <TableShell>
+        {apiMode && catalogQuery.isPending && (
+          <p role="status" className="p-5 text-sm text-[var(--muted-foreground)]">
+            Loading products…
+          </p>
+        )}
         <Toolbar
           query={query}
           onQueryChange={setQuery}
-          placeholder="Search product, SKU, barcode, or category"
+          placeholder="Search product, SKU, or barcode"
         >
           <Select
             value={stockFilter}
@@ -232,7 +284,9 @@ export function ProductsPage() {
             <option value="archived">Archived</option>
           </Select>
           <span className="text-[11px] text-[var(--muted-foreground)]">
-            {filtered.length} products
+            {apiMode
+              ? `${products.length} of ${totalProducts} loaded`
+              : `${filtered.length} products`}
           </span>
         </Toolbar>
         <div className="overflow-x-auto">
@@ -328,7 +382,11 @@ export function ProductsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => archiveProduct(product.id)}
+                          onClick={() => {
+                            void archiveProduct(product).then((saved) => {
+                              if (saved) void refreshCatalog();
+                            });
+                          }}
                           aria-label={`${product.status === "active" ? "Archive" : "Restore"} ${product.name}`}
                           className="size-8"
                         >
@@ -342,6 +400,29 @@ export function ProductsPage() {
             </tbody>
           </table>
         </div>
+        {apiMode && catalogQuery.isError && (
+          <div className="p-5 text-sm" role="alert">
+            <p>Products could not be loaded.</p>
+            <Button
+              className="mt-3"
+              variant="secondary"
+              onClick={() => void catalogQuery.refetch()}
+            >
+              Try again
+            </Button>
+          </div>
+        )}
+        {apiMode && catalogQuery.hasNextPage && (
+          <div className="flex justify-center border-t border-[var(--border)] p-4">
+            <Button
+              variant="secondary"
+              disabled={catalogQuery.isFetchingNextPage}
+              onClick={() => void catalogQuery.fetchNextPage()}
+            >
+              {catalogQuery.isFetchingNextPage ? "Loading…" : "Load more products"}
+            </Button>
+          </div>
+        )}
       </TableShell>
 
       <Modal

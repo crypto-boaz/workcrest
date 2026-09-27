@@ -7,6 +7,7 @@ import type {
   Product,
   ProductInput,
   PurchaseInput,
+  Sale,
   StaffRole,
   StaffInput,
 } from "@/lib/business-types";
@@ -59,78 +60,8 @@ export function mapApiProduct(product: ApiProduct): Product {
   };
 }
 
-export async function loadBusinessState(
-  locationId: string,
-  bootstrap: TenantBootstrap,
-  options: { includePrimary?: boolean; includeSecondary?: boolean } = {},
-): Promise<BusinessState> {
-  const includePrimary = options.includePrimary ?? true;
-  const includeSecondary = options.includeSecondary ?? true;
-  const [
-    products,
-    sales,
-    held,
-    suppliers,
-    returns,
-    expenses,
-    notifications,
-    memberships,
-    invitations,
-    roles,
-  ] = await Promise.all([
-    includePrimary
-      ? page<components["schemas"]["Product"]>(
-          locationPath(locationId, "products/?page_size=100"),
-        )
-      : Promise.resolve({ results: [] }),
-    includePrimary
-      ? page<components["schemas"]["Sale"]>(locationPath(locationId, "sales/"))
-      : Promise.resolve({ results: [] }),
-    includePrimary
-      ? page<components["schemas"]["HeldCart"]>(
-          locationPath(locationId, "held-carts/?page_size=100"),
-        )
-      : Promise.resolve({ results: [] }),
-    includeSecondary
-      ? page<components["schemas"]["Supplier"]>(
-          locationPath(locationId, "suppliers/?page_size=100"),
-        )
-      : Promise.resolve({ results: [] }),
-    includeSecondary
-      ? page<components["schemas"]["ReturnRecord"]>(
-          locationPath(locationId, "returns/"),
-        )
-      : Promise.resolve({ results: [] }),
-    includePrimary
-      ? page<components["schemas"]["Expense"]>(
-          locationPath(locationId, "expenses/?page_size=100"),
-        )
-      : Promise.resolve({ results: [] }),
-    includePrimary
-      ? page<components["schemas"]["Notification"]>(
-          "/api/v1/notifications/",
-        )
-      : Promise.resolve({ results: [] }),
-    includeSecondary
-      ? page<components["schemas"]["Membership"]>(
-          "/api/v1/memberships/?page_size=100",
-        )
-      : Promise.resolve({ results: [] }),
-    includeSecondary
-      ? page<components["schemas"]["Invitation"]>(
-          "/api/v1/invitations/?page_size=100",
-        )
-      : Promise.resolve({ results: [] }),
-    includeSecondary
-      ? page<components["schemas"]["Role"]>("/api/v1/roles/?page_size=100")
-      : Promise.resolve({ results: [] }),
-  ]);
-  const customers: Page<components["schemas"]["Customer"]> = { results: [] };
-  const purchases: Page<components["schemas"]["PurchaseOrder"]> = {
-    results: [],
-  };
-
-  const mappedSales = (sales.results ?? []).map((sale) => ({
+export function mapApiSale(sale: components["schemas"]["Sale"]): Sale {
+  return {
     sourceId: sale.id,
     id: sale.number ?? sale.id ?? "",
     receiptQrIdentifier: sale.receipt_qr_identifier,
@@ -153,12 +84,105 @@ export async function loadBusinessState(
     paymentMethod: paymentLabel(sale.payments?.[0]?.method),
     status:
       sale.status === "refunded" || sale.status === "partially_returned"
-        ? ("refunded" as const)
-        : ("completed" as const),
-    createdAt:
-      sale.completed_at ?? sale.created_at ?? new Date().toISOString(),
+        ? "refunded"
+        : "completed",
+    createdAt: sale.completed_at ?? sale.created_at ?? new Date().toISOString(),
     cashier: sale.cashier_name ?? "Team member",
-  }));
+  };
+}
+
+export type BusinessResource =
+  | "products"
+  | "sales"
+  | "heldSales"
+  | "suppliers"
+  | "returns"
+  | "staff"
+  | "expenses"
+  | "notifications";
+
+const allBusinessResources: BusinessResource[] = [
+  "products",
+  "sales",
+  "heldSales",
+  "suppliers",
+  "returns",
+  "staff",
+  "expenses",
+  "notifications",
+];
+
+export async function loadBusinessState(
+  locationId: string,
+  bootstrap: TenantBootstrap,
+  options: { resources?: readonly BusinessResource[] } = {},
+): Promise<BusinessState> {
+  const resources = new Set(options.resources ?? allBusinessResources);
+  const [
+    products,
+    sales,
+    held,
+    suppliers,
+    returns,
+    expenses,
+    notifications,
+    memberships,
+    invitations,
+    roles,
+  ] = await Promise.all([
+    resources.has("products")
+      ? page<components["schemas"]["Product"]>(
+          locationPath(locationId, "products/?page_size=100"),
+        )
+      : Promise.resolve({ results: [] }),
+    resources.has("sales")
+      ? page<components["schemas"]["Sale"]>(locationPath(locationId, "sales/"))
+      : Promise.resolve({ results: [] }),
+    resources.has("heldSales")
+      ? page<components["schemas"]["HeldCart"]>(
+          locationPath(locationId, "held-carts/?page_size=100"),
+        )
+      : Promise.resolve({ results: [] }),
+    resources.has("suppliers")
+      ? page<components["schemas"]["Supplier"]>(
+          locationPath(locationId, "suppliers/?page_size=100"),
+        )
+      : Promise.resolve({ results: [] }),
+    resources.has("returns")
+      ? page<components["schemas"]["ReturnRecord"]>(
+          locationPath(locationId, "returns/"),
+        )
+      : Promise.resolve({ results: [] }),
+    resources.has("expenses")
+      ? page<components["schemas"]["Expense"]>(
+          locationPath(locationId, "expenses/?page_size=100"),
+        )
+      : Promise.resolve({ results: [] }),
+    resources.has("notifications")
+      ? page<components["schemas"]["Notification"]>(
+          "/api/v1/notifications/",
+        )
+      : Promise.resolve({ results: [] }),
+    resources.has("staff")
+      ? page<components["schemas"]["Membership"]>(
+          "/api/v1/memberships/?page_size=100",
+        )
+      : Promise.resolve({ results: [] }),
+    resources.has("staff")
+      ? page<components["schemas"]["Invitation"]>(
+          "/api/v1/invitations/?page_size=100",
+        )
+      : Promise.resolve({ results: [] }),
+    resources.has("staff")
+      ? page<components["schemas"]["Role"]>("/api/v1/roles/?page_size=100")
+      : Promise.resolve({ results: [] }),
+  ]);
+  const customers: Page<components["schemas"]["Customer"]> = { results: [] };
+  const purchases: Page<components["schemas"]["PurchaseOrder"]> = {
+    results: [],
+  };
+
+  const mappedSales = (sales.results ?? []).map(mapApiSale);
 
   return {
     products: (products.results ?? []).map(mapApiProduct),

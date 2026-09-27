@@ -12,12 +12,14 @@ import {
   Users,
   WalletCards,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { FormEvent, useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import { useBusinessStore } from "@/components/business-store-provider";
 import { usePlatform } from "@/components/platform-provider";
 import { Button } from "@/components/ui/button";
 import type { Customer, CustomerInput, Sale } from "@/lib/business-types";
+import { mapApiSale } from "@/lib/business-api";
 import { commerceApi } from "@/lib/commerce-api";
 import { apiMode } from "@/lib/platform-api";
 import { formatCurrency, formatDate, formatTime } from "@/lib/utils";
@@ -41,13 +43,35 @@ export function SalesPage() {
   const { state } = useBusinessStore();
   const { bootstrap, currentLocation } = usePlatform();
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query.trim());
   const [payment, setPayment] = useState("all");
   const [selected, setSelected] = useState<Sale | null>(null);
+  const salesQuery = useInfiniteQuery({
+    queryKey: ["sales-history", currentLocation.id, deferredQuery],
+    queryFn: ({ pageParam, signal }) =>
+      commerceApi.salesPage(
+        currentLocation.id,
+        deferredQuery,
+        pageParam,
+        signal,
+      ),
+    initialPageParam: "",
+    getNextPageParam: (lastPage) => lastPage.next || undefined,
+    enabled: apiMode,
+    staleTime: 30_000,
+  });
+  const sales = useMemo(
+    () =>
+      apiMode
+        ? salesQuery.data?.pages.flatMap((page) => page.results.map(mapApiSale)) ?? []
+        : state.sales,
+    [salesQuery.data, state.sales],
+  );
 
   useEffect(() => {
     const receipt = new URLSearchParams(window.location.search).get("receipt");
     if (!receipt) return;
-    const match = state.sales.find(
+    const match = sales.find(
       (sale) =>
         sale.receiptQrIdentifier === receipt ||
         sale.sourceId === receipt ||
@@ -61,50 +85,14 @@ export function SalesPage() {
     const controller = new AbortController();
     void commerceApi
       .saleByReceiptQr(currentLocation.id, receipt, controller.signal)
-      .then((sale) =>
-        setSelected({
-          sourceId: sale.id,
-          id: sale.number ?? sale.id ?? "",
-          receiptQrIdentifier: sale.receipt_qr_identifier,
-          customerId: sale.customer ?? undefined,
-          customerName: sale.customer_name ?? "Walk-in customer",
-          items: (sale.items ?? []).map((item) => ({
-            sourceItemId: item.id,
-            productId: item.product ?? "",
-            name: item.product_name ?? "Product",
-            sku: item.sku ?? "",
-            barcode: item.barcode ?? "",
-            productQrIdentifier: item.product_qr_identifier,
-            quantity: Number(item.quantity ?? 0),
-            unitPrice: Number(item.unit_price ?? 0),
-            cost: Number(item.unit_cost ?? 0),
-          })),
-          subtotal: Number(sale.subtotal ?? 0),
-          discount: Number(sale.discount ?? 0),
-          total: Number(sale.total ?? 0),
-          paymentMethod:
-            sale.payments?.[0]?.method === "card"
-              ? "Card"
-              : sale.payments?.[0]?.method === "transfer"
-                ? "Transfer"
-                : "Cash",
-          status:
-            sale.status === "refunded" ||
-            sale.status === "partially_returned"
-              ? "refunded"
-              : "completed",
-          createdAt:
-            sale.completed_at ?? sale.created_at ?? new Date().toISOString(),
-          cashier: sale.cashier_name ?? "Team member",
-        }),
-      )
+      .then((sale) => setSelected(mapApiSale(sale)))
       .catch(() => undefined);
     return () => controller.abort();
-  }, [currentLocation.id, state.sales]);
+  }, [currentLocation.id, sales]);
 
   const filtered = useMemo(
     () =>
-      state.sales.filter(
+      sales.filter(
         (sale) =>
           [sale.id, sale.customerName, sale.cashier]
             .join(" ")
@@ -112,18 +100,18 @@ export function SalesPage() {
             .includes(query.toLowerCase()) &&
           (payment === "all" || sale.paymentMethod === payment),
       ),
-    [payment, query, state.sales],
+    [payment, query, sales],
   );
   const today = new Date().toDateString();
-  const todaysSales = state.sales.filter(
+  const todaysSales = sales.filter(
     (sale) => new Date(sale.createdAt).toDateString() === today,
   );
   const todayTotal = todaysSales.reduce((sum, sale) => sum + sale.total, 0);
-  const avgOrder = state.sales.length
-    ? state.sales.reduce((sum, sale) => sum + sale.total, 0) /
-      state.sales.length
+  const avgOrder = sales.length
+    ? sales.reduce((sum, sale) => sum + sale.total, 0) /
+      sales.length
     : 0;
-  const profit = state.sales.reduce(
+  const profit = sales.reduce(
     (sum, sale) =>
       sum +
       sale.items.reduce(
@@ -154,31 +142,36 @@ export function SalesPage() {
         eyebrow="Revenue"
         title="Sales"
         description="Review every completed checkout, payment method, and item-level transaction detail."
-        actions={<ExportButton onClick={exportSales} />}
+        actions={
+          <ExportButton
+            onClick={exportSales}
+            label={apiMode ? "Export loaded CSV" : "Export CSV"}
+          />
+        }
       />
       <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatTile
-          label="Today’s revenue"
+          label={apiMode ? "Loaded today's revenue" : "Today’s revenue"}
           value={formatCurrency(todayTotal)}
           detail={`${todaysSales.length} completed transactions`}
           icon={CircleDollarSign}
           tone="green"
         />
         <StatTile
-          label="All transactions"
-          value={state.sales.length.toLocaleString()}
-          detail="Across the mock data period"
+          label={apiMode ? "Loaded transactions" : "All transactions"}
+          value={sales.length.toLocaleString()}
+          detail={apiMode ? "Use Load more for older sales" : "Across the mock data period"}
           icon={ReceiptText}
         />
         <StatTile
-          label="Average order"
+          label={apiMode ? "Loaded average order" : "Average order"}
           value={formatCurrency(avgOrder)}
           detail="Average checkout value"
           icon={ShoppingBag}
           tone="amber"
         />
         <StatTile
-          label="Gross profit"
+          label={apiMode ? "Loaded gross profit" : "Gross profit"}
           value={formatCurrency(profit)}
           detail="Revenue less item costs"
           icon={WalletCards}
@@ -187,10 +180,15 @@ export function SalesPage() {
       </section>
 
       <TableShell>
+        {apiMode && salesQuery.isPending && (
+          <p role="status" className="p-5 text-sm text-[var(--muted-foreground)]">
+            Loading sales…
+          </p>
+        )}
         <Toolbar
           query={query}
           onQueryChange={setQuery}
-          placeholder="Search transaction, customer, or cashier"
+          placeholder="Search transaction or customer"
         >
           <Select
             value={payment}
@@ -203,7 +201,7 @@ export function SalesPage() {
             <option value="Transfer">Transfer</option>
           </Select>
           <span className="text-[11px] text-[var(--muted-foreground)]">
-            {filtered.length} records
+            {apiMode ? `${sales.length} loaded` : `${filtered.length} records`}
           </span>
         </Toolbar>
         <div className="overflow-x-auto">
@@ -272,6 +270,29 @@ export function SalesPage() {
             </tbody>
           </table>
         </div>
+        {apiMode && salesQuery.isError && (
+          <div className="p-5 text-sm" role="alert">
+            <p>Sales could not be loaded.</p>
+            <Button
+              className="mt-3"
+              variant="secondary"
+              onClick={() => void salesQuery.refetch()}
+            >
+              Try again
+            </Button>
+          </div>
+        )}
+        {apiMode && salesQuery.hasNextPage && (
+          <div className="flex justify-center border-t border-[var(--border)] p-4">
+            <Button
+              variant="secondary"
+              disabled={salesQuery.isFetchingNextPage}
+              onClick={() => void salesQuery.fetchNextPage()}
+            >
+              {salesQuery.isFetchingNextPage ? "Loading…" : "Load more sales"}
+            </Button>
+          </div>
+        )}
       </TableShell>
 
       <Modal

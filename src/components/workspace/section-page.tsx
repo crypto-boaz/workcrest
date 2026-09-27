@@ -2,6 +2,7 @@
 
 import { LockKeyhole } from "lucide-react";
 
+import { useBusinessStore } from "@/components/business-store-provider";
 import { SalesPage } from "@/components/workspace/sales-customers-pages";
 import { ProductsPage } from "@/components/workspace/products-page";
 import { PosPage } from "@/components/workspace/pos-page";
@@ -20,6 +21,7 @@ import {
   ExpensesPage,
   StaffPage,
 } from "@/components/workspace/staff-expenses-pages";
+import { apiMode } from "@/lib/platform-api";
 
 function AdminOnlyPage({ title }: { title: string }) {
   return (
@@ -48,6 +50,16 @@ function AdminOnlyPage({ title }: { title: string }) {
 }
 
 export function SectionPage({ section }: { section: string }) {
+  const { hydrated } = useBusinessStore();
+  if (apiMode && !hydrated && !["products", "sales"].includes(section)) {
+    return (
+      <Workspace>
+        <p role="status" className="p-5 text-sm text-[var(--muted-foreground)]">
+          Loading workspace data…
+        </p>
+      </Workspace>
+    );
+  }
   switch (section) {
     case "products":
       return <ProductsPage />;

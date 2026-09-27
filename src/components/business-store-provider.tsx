@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePathname } from "next/navigation";
 
 import { useOptionalPlatform } from "@/components/platform-provider";
 import type {
@@ -27,7 +28,11 @@ import type {
   SaleItem,
   StaffInput,
 } from "@/lib/business-types";
-import { businessApi, loadBusinessState } from "@/lib/business-api";
+import {
+  businessApi,
+  loadBusinessState,
+  type BusinessResource,
+} from "@/lib/business-api";
 import { seedBusinessState } from "@/lib/seed-business-data";
 import { apiMode } from "@/lib/platform-api";
 import { formatCurrency } from "@/lib/utils";
@@ -43,14 +48,14 @@ interface BusinessStoreValue {
   state: BusinessState;
   hydrated: boolean;
   toast: ToastMessage | null;
-  addProduct: (input: ProductInput) => void;
+  addProduct: (input: ProductInput) => Promise<boolean>;
   updateProduct: (
     id: string,
     input: ProductInput,
     expectedStock: number,
     expectedVersion?: number,
   ) => Promise<boolean>;
-  archiveProduct: (id: string) => void;
+  archiveProduct: (product: Product) => Promise<boolean>;
   addCustomer: (input: CustomerInput) => void;
   completeSale: (input: CompleteSaleInput) => Sale;
   recordCompletedSale: (sale: Sale) => void;
@@ -85,6 +90,42 @@ const createId = (prefix: string) =>
   `${prefix}-${Date.now().toString(36).toUpperCase()}`;
 
 const cloneSeed = () => structuredClone(seedBusinessState);
+
+function resourcesForPath(pathname: string): BusinessResource[] {
+  switch (pathname.split("/")[1] || "dashboard") {
+    case "dashboard":
+      return [];
+    case "products":
+      return [];
+    case "pos":
+      return ["products"];
+    case "sales":
+      return [];
+    case "returns":
+      return ["products", "sales", "returns"];
+    case "people":
+      return ["staff"];
+    case "expenses":
+      return ["expenses"];
+    case "reports":
+      return ["products", "sales", "expenses"];
+    case "alerts":
+      return [];
+    default:
+      return [];
+  }
+}
+
+function mergeBusinessResources(
+  current: BusinessState,
+  loaded: BusinessState,
+  resources: readonly BusinessResource[],
+): BusinessState {
+  const updates = Object.fromEntries(
+    resources.map((resource) => [resource, loaded[resource]]),
+  ) as Partial<BusinessState>;
+  return { ...current, ...updates, settings: loaded.settings };
+}
 
 const emptyBusinessState = (
   platform?: ReturnType<typeof useOptionalPlatform>,
@@ -124,6 +165,7 @@ export function BusinessStoreProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
   const platform = useOptionalPlatform();
   const actorName = platform?.bootstrap.user.full_name || "Store manager";
   const activeScope =
@@ -133,7 +175,8 @@ export function BusinessStoreProvider({
         ? "pending"
         : "mock";
   const activeScopeRef = useRef(activeScope);
-  const refreshVersion = useRef(0);
+  const resourcesScopeRef = useRef<string | null>(null);
+  const loadedResourcesRef = useRef<Set<BusinessResource>>(new Set());
   const [state, setState] = useState<BusinessState>(() =>
     apiMode ? emptyBusinessState(platform) : cloneSeed(),
   );
@@ -176,56 +219,50 @@ export function BusinessStoreProvider({
 
   const refreshBusinessState = useCallback(async () => {
     if (!apiMode || !platform?.ready) return;
+    const resources = resourcesForPath(pathname);
     const nextState = await loadBusinessState(
       platform.currentLocation.id,
       platform.bootstrap,
+      { resources },
     );
     if (activeScopeRef.current !== activeScope) return;
-    refreshVersion.current += 1;
-    setState(nextState);
+    loadedResourcesRef.current = new Set(resources);
+    setState((current) => mergeBusinessResources(current, nextState, resources));
     setLoadedScope(activeScope);
-  }, [activeScope, platform]);
+  }, [activeScope, pathname, platform]);
 
   useEffect(() => {
     if (!apiMode || !platform?.ready) return;
+    if (resourcesScopeRef.current !== activeScope) {
+      resourcesScopeRef.current = activeScope;
+      loadedResourcesRef.current = new Set();
+      setState(emptyBusinessState(platform));
+    }
+    const resources = resourcesForPath(pathname).filter(
+      (resource) => !loadedResourcesRef.current.has(resource),
+    );
+    if (!resources.length) {
+      setLoadedScope(activeScope);
+      setHydrated(true);
+      return;
+    }
     let active = true;
+    setHydrated(false);
     void loadBusinessState(platform.currentLocation.id, platform.bootstrap, {
-      includeSecondary: false,
+      resources,
     })
       .then((nextState) => {
-        if (active) {
-          setState(nextState);
+        if (active && activeScopeRef.current === activeScope) {
+          setState((current) =>
+            mergeBusinessResources(current, nextState, resources),
+          );
+          resources.forEach((resource) => loadedResourcesRef.current.add(resource));
           setLoadedScope(activeScope);
           setHydrated(true);
-          // Secondary modules should never delay the first usable dashboard.
-          const startingRefreshVersion = refreshVersion.current;
-          void loadBusinessState(platform.currentLocation.id, platform.bootstrap, {
-            includePrimary: false,
-          })
-            .then((secondaryState) => {
-              if (active && refreshVersion.current === startingRefreshVersion) {
-                setState((current) => ({
-                  ...current,
-                  suppliers: secondaryState.suppliers,
-                  returns: secondaryState.returns,
-                  staff: secondaryState.staff,
-                }));
-              }
-            })
-            .catch((error) => {
-              if (active) {
-                showToast(
-                  "Could not load some workspace data",
-                  error instanceof Error ? error.message : "Try refreshing the page.",
-                  "error",
-                );
-              }
-            });
         }
       })
       .catch((error) => {
-        if (active) {
-          setState(emptyBusinessState(platform));
+        if (active && activeScopeRef.current === activeScope) {
           setLoadedScope(activeScope);
           setHydrated(true);
           showToast(
@@ -238,7 +275,7 @@ export function BusinessStoreProvider({
     return () => {
       active = false;
     };
-  }, [activeScope, platform, showToast]);
+  }, [activeScope, pathname, platform, showToast]);
 
   const visibleState = useMemo(
     () =>
@@ -279,63 +316,25 @@ export function BusinessStoreProvider({
     });
   }, []);
 
-  const replaceProduct = useCallback((temporaryId: string, product: Product) => {
-    setState((current) => {
-      const products = current.products.map((item) =>
-        item.id === temporaryId ? product : item,
-      );
-      if (!products.some((item) => item.id === product.id)) {
-        products.unshift(product);
-      }
-      return {
-        ...current,
-        products: products.filter(
-          (item, index, list) =>
-            list.findIndex((entry) => entry.id === item.id) === index,
-        ),
-      };
-    });
-  }, []);
-
-  const removeProduct = useCallback((id: string) => {
-    setState((current) => ({
-      ...current,
-      products: current.products.filter((product) => product.id !== id),
-    }));
-  }, []);
-
   const addProduct = useCallback(
-    (input: ProductInput) => {
+    async (input: ProductInput): Promise<boolean> => {
       if (apiMode && platform) {
-        const temporaryId =
-          typeof crypto !== "undefined" && "randomUUID" in crypto
-            ? `pending-${crypto.randomUUID()}`
-            : `pending-${Date.now()}`;
-        const optimisticProduct: Product = {
-          ...input,
-          id: temporaryId,
-          status: "active",
-          updatedAt: new Date().toISOString(),
-        };
-        upsertProduct(optimisticProduct, true);
-        void businessApi
-          .createProduct(platform.currentLocation.id, input)
-          .then((product) => replaceProduct(temporaryId, product))
-          .then(() =>
-            showToast(
-              "Product added",
-              `${input.name} is now in your catalogue.`,
-            ),
-          )
-          .catch((error) => {
-            removeProduct(temporaryId);
-            showToast(
-              "Could not add product",
-              error instanceof Error ? error.message : "Try again.",
-              "error",
-            );
-          });
-        return;
+        try {
+          const product = await businessApi.createProduct(
+            platform.currentLocation.id,
+            input,
+          );
+          upsertProduct(product, true);
+          showToast("Product added", `${input.name} is now in your catalogue.`);
+          return true;
+        } catch (error) {
+          showToast(
+            "Could not add product",
+            error instanceof Error ? error.message : "Try again.",
+            "error",
+          );
+          return false;
+        }
       }
       setState((current) => ({
         ...current,
@@ -350,8 +349,9 @@ export function BusinessStoreProvider({
         ],
       }));
       showToast("Product added", `${input.name} is now in your catalogue.`);
+      return true;
     },
-    [platform, removeProduct, replaceProduct, showToast, upsertProduct],
+    [platform, showToast, upsertProduct],
   );
 
   const updateProduct = useCallback(
@@ -401,30 +401,28 @@ export function BusinessStoreProvider({
   );
 
   const archiveProduct = useCallback(
-    (id: string) => {
+    async (product: Product): Promise<boolean> => {
+      const id = product.id;
       if (apiMode && platform) {
-        const product = state.products.find((item) => item.id === id);
-        if (!product) return;
         const nextStatus =
           product.status === "active" ? "archived" : "active";
-        upsertProduct({
-          ...product,
-          status: nextStatus,
-          updatedAt: new Date().toISOString(),
-        });
-        void businessApi
-          .setProductStatus(platform.currentLocation.id, id, nextStatus)
-          .then((updatedProduct) => upsertProduct(updatedProduct))
-          .then(() => showToast("Product status changed"))
-          .catch((error) => {
-            upsertProduct(product);
-            showToast(
-              "Could not change product status",
-              error instanceof Error ? error.message : "Try again.",
-              "error",
-            );
-          });
-        return;
+        try {
+          const updatedProduct = await businessApi.setProductStatus(
+            platform.currentLocation.id,
+            id,
+            nextStatus,
+          );
+          upsertProduct(updatedProduct);
+          showToast("Product status changed");
+          return true;
+        } catch (error) {
+          showToast(
+            "Could not change product status",
+            error instanceof Error ? error.message : "Try again.",
+            "error",
+          );
+          return false;
+        }
       }
       setState((current) => ({
         ...current,
@@ -439,8 +437,9 @@ export function BusinessStoreProvider({
         ),
       }));
       showToast("Product status changed");
+      return true;
     },
-    [platform, showToast, state.products, upsertProduct],
+    [platform, showToast, upsertProduct],
   );
 
   const addCustomer = useCallback(
@@ -900,7 +899,7 @@ export function BusinessStoreProvider({
           inviteUrl.searchParams.set("token", invitation.acceptance_token);
           const inviteScope = activeScope;
           void loadBusinessState(platform.currentLocation.id, platform.bootstrap, {
-            includePrimary: false,
+            resources: ["staff"],
           })
             .then((updated) => {
               if (activeScopeRef.current === inviteScope) {

@@ -7,7 +7,27 @@ export type ApiCustomer = components["schemas"]["Customer"];
 export type ApiSupplier = components["schemas"]["Supplier"];
 export type ApiNotification = components["schemas"]["Notification"];
 
-type ProductPage = components["schemas"]["PaginatedProductList"];
+export interface DashboardSummary {
+  generated_at: string;
+  metrics: {
+    inventory_value: string;
+    inventory_units: string;
+    today_sales: string;
+    today_transactions: number;
+    monthly_sales: string;
+    total_products: number;
+    monthly_expenses: string;
+    customer_debts: string;
+    supplier_balance: string;
+    supplier_payments: string;
+  };
+  sales_trend: Array<{ day: string; sales: string; transactions: number }>;
+  recent_transactions: ApiSale[];
+  stock_alerts: ApiProduct[];
+}
+
+export type ProductPage = components["schemas"]["PaginatedProductList"];
+export type SalePage = components["schemas"]["PaginatedSaleList"];
 type CustomerPage = components["schemas"]["PaginatedCustomerList"];
 type HeldCartPage = components["schemas"]["PaginatedHeldCartList"];
 
@@ -17,7 +37,7 @@ function locationPath(locationId: string, resource: string) {
 
 export const commerceApi = {
   dashboard: (locationId: string, signal?: AbortSignal) =>
-    apiRequest<Record<string, unknown>>(
+    apiRequest<DashboardSummary>(
       locationPath(locationId, "dashboard/"),
       { signal },
     ),
@@ -26,6 +46,46 @@ export const commerceApi = {
       `${locationPath(locationId, "products/")}?page_size=100&search=${encodeURIComponent(query)}`,
       { signal },
     ),
+  productById: (locationId: string, id: string) =>
+    apiRequest<ApiProduct>(locationPath(locationId, `products/${id}/`)),
+  productPage: (
+    locationId: string,
+    query: string,
+    nextUrl: string,
+    signal?: AbortSignal,
+  ) => {
+    const path = locationPath(locationId, "products/");
+    if (!nextUrl) {
+      return apiRequest<ProductPage>(
+        `${path}?page_size=100&search=${encodeURIComponent(query)}`,
+        { signal },
+      );
+    }
+    const next = new URL(nextUrl, "https://workcrest.invalid");
+    if (next.pathname !== path) {
+      throw new Error("Unexpected product page address.");
+    }
+    return apiRequest<ProductPage>(`${next.pathname}${next.search}`, { signal });
+  },
+  salesPage: (
+    locationId: string,
+    query: string,
+    nextUrl: string,
+    signal?: AbortSignal,
+  ) => {
+    const path = locationPath(locationId, "sales/");
+    if (!nextUrl) {
+      return apiRequest<SalePage>(
+        `${path}?search=${encodeURIComponent(query)}`,
+        { signal },
+      );
+    }
+    const next = new URL(nextUrl, "https://workcrest.invalid");
+    if (next.pathname !== path) {
+      throw new Error("Unexpected sales page address.");
+    }
+    return apiRequest<SalePage>(`${next.pathname}${next.search}`, { signal });
+  },
   customers: (locationId: string, signal?: AbortSignal) =>
     apiRequest<CustomerPage>(
       `${locationPath(locationId, "customers/")}?page_size=100`,

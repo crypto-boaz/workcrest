@@ -69,6 +69,7 @@ export function PosPage() {
   const [heldOpen, setHeldOpen] = useState(false);
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [cartProductCache, setCartProductCache] = useState<Record<string, Product>>({});
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
   const productQueryKey = ["products", currentLocation.id, "pos"];
@@ -83,6 +84,14 @@ export function PosPage() {
     staleTime: 60_000,
     gcTime: 10 * 60_000,
     placeholderData: (previous) => previous,
+  });
+  const searchProductsQuery = useQuery({
+    queryKey: ["products", currentLocation.id, "pos-search", deferredQuery],
+    queryFn: ({ signal }) =>
+      commerceApi.products(currentLocation.id, deferredQuery, signal),
+    enabled: apiMode && ready && Boolean(deferredQuery),
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
   });
   const apiCustomersQuery = useQuery({
     queryKey: ["customers", currentLocation.id, "pos"],
@@ -106,13 +115,25 @@ export function PosPage() {
   const availableProducts: Product[] = useMemo(
     () =>
       apiMode
-        ? apiProductsQuery.data?.results?.map(mapApiProduct) ?? state.products
+        ? deferredQuery
+          ? searchProductsQuery.data?.results?.map(mapApiProduct) ?? []
+          : apiProductsQuery.data?.results?.map(mapApiProduct) ?? state.products
         : state.products,
-    [apiProductsQuery.data?.results, state.products],
+    [
+      apiProductsQuery.data?.results,
+      deferredQuery,
+      searchProductsQuery.data?.results,
+      state.products,
+    ],
   );
   const productsById = useMemo(
-    () => new Map(availableProducts.map((product) => [product.id, product])),
-    [availableProducts],
+    () =>
+      new Map(
+        [...state.products, ...availableProducts, ...Object.values(cartProductCache)].map(
+          (product) => [product.id, product],
+        ),
+      ),
+    [availableProducts, cartProductCache, state.products],
   );
   const availableCustomers = useMemo(
     () =>
@@ -181,6 +202,7 @@ export function PosPage() {
     const product = productsById.get(productId);
     if (!product) return;
     if (product.stock < 1) return;
+    setCartProductCache((current) => ({ ...current, [productId]: product }));
     setCart((current) => {
       const line = current.find((entry) => entry.productId === productId);
       if (line) {
@@ -228,6 +250,7 @@ export function PosPage() {
 
   const clearCart = () => {
     setCart([]);
+    setCartProductCache({});
     setDiscount(0);
     setCustomerId("");
   };
@@ -339,6 +362,18 @@ export function PosPage() {
           void Promise.all([
             apiProductsQuery.refetch(),
             queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+            queryClient.invalidateQueries({
+              queryKey: ["dashboard-summary", currentLocation.id],
+            }),
+            queryClient.invalidateQueries({
+              queryKey: ["sales-history", currentLocation.id],
+            }),
+            queryClient.invalidateQueries({
+              queryKey: ["catalog-products", currentLocation.id],
+            }),
+            queryClient.invalidateQueries({
+              queryKey: ["products", currentLocation.id, "pos-search"],
+            }),
           ]).catch(() => undefined);
         }, 250);
       } else {
@@ -364,9 +399,31 @@ export function PosPage() {
     }
   };
 
-  const resumeHeld = (id: string) => {
+  const resumeHeld = async (id: string) => {
     const held = availableHeldSales.find((sale) => sale.id === id);
     if (!held) return;
+    if (apiMode) {
+      try {
+        const heldProducts = await Promise.all(
+          held.items.map(async (item) =>
+            productsById.get(item.productId) ??
+            mapApiProduct(
+              await commerceApi.productById(currentLocation.id, item.productId),
+            ),
+          ),
+        );
+        setCartProductCache(
+          Object.fromEntries(heldProducts.map((product) => [product.id, product])),
+        );
+      } catch (error) {
+        showToast(
+          "Could not resume held sale",
+          error instanceof Error ? error.message : "Try again.",
+          "error",
+        );
+        return;
+      }
+    }
     setCart(
       held.items.map((item) => ({
         productId: item.productId,
@@ -375,12 +432,19 @@ export function PosPage() {
     );
     setCustomerId(held.customerId ?? "");
     setDiscount(held.discount);
-    if (apiMode) {
+    if (!apiMode) {
+      removeHeldSale(id);
+    } else {
       void commerceApi
         .deleteHeldCart(currentLocation.id, id)
-        .then(() => apiHeldCartsQuery.refetch());
-    } else {
-      removeHeldSale(id);
+        .then(() => apiHeldCartsQuery.refetch())
+        .catch((error) =>
+          showToast(
+            "Held sale resumed, but its saved copy could not be cleared",
+            error instanceof Error ? error.message : "Try again later.",
+            "error",
+          ),
+        );
     }
     setHeldOpen(false);
     showToast("Held sale resumed", undefined, "info");
@@ -439,7 +503,22 @@ export function PosPage() {
             </div>
           </div>
 
-          {products.length ? (
+          {apiMode && deferredQuery && searchProductsQuery.isPending ? (
+            <div role="status" className="p-6 text-sm text-[var(--muted-foreground)]">
+              Searching products…
+            </div>
+          ) : apiMode && deferredQuery && searchProductsQuery.isError ? (
+            <div role="alert" className="p-6 text-sm">
+              <p>Product search failed.</p>
+              <Button
+                className="mt-3"
+                variant="secondary"
+                onClick={() => void searchProductsQuery.refetch()}
+              >
+                Try again
+              </Button>
+            </div>
+          ) : products.length ? (
             <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
               {products.map((product) => (
                 <button

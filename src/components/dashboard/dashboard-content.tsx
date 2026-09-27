@@ -16,9 +16,15 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { useBusinessStore } from "@/components/business-store-provider";
 import { usePlatform } from "@/components/platform-provider";
+import { useNotifications } from "@/components/use-notifications";
+import type { BusinessState } from "@/lib/business-types";
+import { loadBusinessState } from "@/lib/business-api";
+import { commerceApi, type DashboardSummary } from "@/lib/commerce-api";
+import { apiMode, PlatformApiError } from "@/lib/platform-api";
 import {
   SalesChart,
   type SalesPeriod,
@@ -38,6 +44,137 @@ const metricIcons = {
   monthlySales: TrendingUp,
   totalProducts: PackageSearch,
 };
+
+function dashboardFromSummary(
+  summary: DashboardSummary,
+  businessName: string,
+  locale: string,
+  timezone: string,
+  notifications: BusinessState["notifications"],
+): DashboardData {
+  const metrics = summary.metrics;
+  const todayParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(summary.generated_at));
+  const datePart = (type: string) =>
+    todayParts.find((part) => part.type === type)?.value ?? "01";
+  const today = new Date(
+    Date.UTC(
+      Number(datePart("year")),
+      Number(datePart("month")) - 1,
+      Number(datePart("day")),
+    ),
+  );
+  const trend = new Map(
+    summary.sales_trend.map((point) => [point.day.slice(0, 10), point]),
+  );
+  const series = (days: number) =>
+    Array.from({ length: days }, (_, index) => {
+      const date = new Date(today);
+      date.setUTCDate(today.getUTCDate() - (days - index - 1));
+      const point = trend.get(date.toISOString().slice(0, 10));
+      return {
+        date: date.toISOString(),
+        label: new Intl.DateTimeFormat(locale, {
+          timeZone: "UTC",
+          day: days > 7 ? "numeric" : undefined,
+          month: days > 7 ? "short" : undefined,
+          weekday: days <= 7 ? "short" : undefined,
+        }).format(date),
+        sales: Number(point?.sales ?? 0),
+        transactions: Number(point?.transactions ?? 0),
+      };
+    });
+
+  return {
+    businessName,
+    metrics: [
+      {
+        key: "inventoryValue",
+        label: "Inventory value",
+        value: Number(metrics.inventory_value),
+        format: "currency",
+        change: 0,
+        changeLabel: "live stock at cost",
+      },
+      {
+        key: "todaysSales",
+        label: "Today's sales",
+        value: Number(metrics.today_sales),
+        format: "currency",
+        change: 0,
+        changeLabel: `${metrics.today_transactions} transactions today`,
+      },
+      {
+        key: "monthlySales",
+        label: "Monthly sales",
+        value: Number(metrics.monthly_sales),
+        format: "currency",
+        change: 0,
+        changeLabel: "current calendar month",
+      },
+      {
+        key: "totalProducts",
+        label: "Total products",
+        value: metrics.total_products,
+        format: "number",
+        change: 0,
+        changeLabel: `${Number(metrics.inventory_units)} units on hand`,
+      },
+    ],
+    sales: {
+      sevenDays: series(7),
+      thirtyDays: series(30),
+      thisMonth: series(Math.max(today.getUTCDate(), 7)),
+    },
+    transactions: summary.recent_transactions.slice(0, 5).map((sale) => ({
+      id: sale.number ?? sale.id ?? "",
+      customer: sale.customer_name ?? "Walk-in customer",
+      createdAt: sale.completed_at ?? sale.created_at ?? summary.generated_at,
+      amount: Number(sale.total ?? 0),
+      method:
+        sale.payments?.[0]?.method === "card"
+          ? ("Card" as const)
+          : sale.payments?.[0]?.method === "transfer"
+            ? ("Transfer" as const)
+            : ("Cash" as const),
+      status:
+        sale.status === "refunded" || sale.status === "partially_returned"
+          ? ("refunded" as const)
+          : ("completed" as const),
+    })),
+    stockAlerts: summary.stock_alerts.slice(0, 4).map((product) => {
+      const remaining = Number(product.stock_quantity ?? 0);
+      return {
+        id: product.id ?? "",
+        product: product.name ?? "Product",
+        sku: product.sku ?? "",
+        remaining,
+        reorderAt: Number(product.reorder_level ?? 0),
+        severity: remaining === 0 ? ("out" as const) : ("low" as const),
+      };
+    }),
+    finances: {
+      customerDebts: Number(metrics.customer_debts),
+      supplierPayments: Number(metrics.supplier_payments),
+      monthlyExpenses: Number(metrics.monthly_expenses),
+      netCashFlow:
+        Number(metrics.monthly_sales) - Number(metrics.monthly_expenses),
+    },
+    notifications: notifications.map((notification) => ({
+      id: notification.id,
+      title: notification.title,
+      body: notification.body,
+      createdAt: notification.createdAt,
+      unread: notification.unread,
+      tone: notification.tone,
+    })),
+    lastUpdated: summary.generated_at,
+  };
+}
 
 function MetricCard({ metric }: { metric: DashboardMetric }) {
   const Icon = metricIcons[metric.key];
@@ -59,10 +196,12 @@ function MetricCard({ metric }: { metric: DashboardMetric }) {
         </span>
       </div>
       <div className="mt-5 flex items-center gap-1.5 text-[11px]">
-        <span className="inline-flex items-center gap-0.5 font-semibold text-emerald-600 dark:text-emerald-400">
-          <ArrowUpRight className="size-3" />
-          {metric.change}%
-        </span>
+        {metric.change !== 0 && (
+          <span className="inline-flex items-center gap-0.5 font-semibold text-emerald-600 dark:text-emerald-400">
+            <ArrowUpRight className="size-3" />
+            {metric.change}%
+          </span>
+        )}
         <span className="truncate text-[var(--muted-foreground)]">
           {metric.changeLabel}
         </span>
@@ -302,26 +441,52 @@ function FinanceSummary({
 
 export function DashboardContent() {
   const { state, hydrated } = useBusinessStore();
-  const { bootstrap } = usePlatform();
+  const { notifications } = useNotifications();
+  const { bootstrap, currentLocation, ready } = usePlatform();
+  const dashboardQuery = useQuery({
+    queryKey: ["dashboard-summary", currentLocation.id],
+    queryFn: ({ signal }) => commerceApi.dashboard(currentLocation.id, signal),
+    enabled: apiMode && ready,
+    staleTime: 30_000,
+    retry: (failureCount, error) =>
+      !(error instanceof PlatformApiError && error.status === 403) &&
+      failureCount < 1,
+  });
+  const needsLegacyOverview =
+    dashboardQuery.error instanceof PlatformApiError &&
+    dashboardQuery.error.status === 403;
+  const fallbackQuery = useQuery({
+    queryKey: ["dashboard-fallback", currentLocation.id],
+    queryFn: () =>
+      loadBusinessState(currentLocation.id, bootstrap, {
+        resources: ["products", "sales", "suppliers", "expenses"],
+      }),
+    enabled: apiMode && needsLegacyOverview,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const dashboardState = fallbackQuery.data
+    ? { ...fallbackQuery.data, notifications }
+    : state;
   const locale = bootstrap.organization.locale;
   const firstName =
     bootstrap.user.full_name.trim().split(/\s+/)[0] || "there";
   const [period, setPeriod] = useState<SalesPeriod>("sevenDays");
-  const data = useMemo<DashboardData>(() => {
+  const localData = useMemo<DashboardData>(() => {
     const now = new Date();
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
-    const monthSales = state.sales.filter((sale) => {
+    const monthSales = dashboardState.sales.filter((sale) => {
       const date = new Date(sale.createdAt);
       return (
         date.getMonth() === now.getMonth() &&
         date.getFullYear() === now.getFullYear()
       );
     });
-    const todaySales = state.sales.filter(
+    const todaySales = dashboardState.sales.filter(
       (sale) => new Date(sale.createdAt).getTime() >= startOfToday.getTime(),
     );
-    const inventoryValue = state.products.reduce(
+    const inventoryValue = dashboardState.products.reduce(
       (sum, product) => sum + product.cost * product.stock,
       0,
     );
@@ -329,7 +494,7 @@ export function DashboardContent() {
       (sum, sale) => sum + sale.total,
       0,
     );
-    const monthlyExpenses = state.expenses
+    const monthlyExpenses = dashboardState.expenses
       .filter((expense) => {
         const date = new Date(expense.date);
         return (
@@ -343,7 +508,7 @@ export function DashboardContent() {
       Array.from({ length: days }, (_, index) => {
         const date = new Date(now);
         date.setDate(date.getDate() - (days - index - 1));
-        const matching = state.sales.filter(
+        const matching = dashboardState.sales.filter(
           (sale) =>
             new Date(sale.createdAt).toDateString() === date.toDateString(),
         );
@@ -389,11 +554,11 @@ export function DashboardContent() {
         {
           key: "totalProducts",
           label: "Total products",
-          value: state.products.filter((product) => product.status === "active")
+          value: dashboardState.products.filter((product) => product.status === "active")
             .length,
           format: "number",
           change: 2.1,
-          changeLabel: `${state.products.reduce((sum, product) => sum + product.stock, 0)} units on hand`,
+          changeLabel: `${dashboardState.products.reduce((sum, product) => sum + product.stock, 0)} units on hand`,
         },
       ],
       sales: {
@@ -401,7 +566,7 @@ export function DashboardContent() {
         thirtyDays: buildSeries(30),
         thisMonth: buildSeries(Math.max(now.getDate(), 7)),
       },
-      transactions: state.sales.slice(0, 5).map((sale) => ({
+      transactions: dashboardState.sales.slice(0, 5).map((sale) => ({
         id: sale.id,
         customer: sale.customerName,
         createdAt: sale.createdAt,
@@ -409,7 +574,7 @@ export function DashboardContent() {
         method: sale.paymentMethod,
         status: sale.status === "refunded" ? "refunded" : "completed",
       })),
-      stockAlerts: state.products
+      stockAlerts: dashboardState.products
         .filter((product) => product.stock <= product.reorderLevel)
         .sort((a, b) => a.stock - b.stock)
         .slice(0, 4)
@@ -422,18 +587,18 @@ export function DashboardContent() {
           severity: product.stock === 0 ? "out" : "low",
         })),
       finances: {
-        customerDebts: state.customers.reduce(
+        customerDebts: dashboardState.customers.reduce(
           (sum, customer) => sum + customer.outstanding,
           0,
         ),
-        supplierPayments: state.suppliers.reduce(
+        supplierPayments: dashboardState.suppliers.reduce(
           (sum, supplier) => sum + supplier.balance,
           0,
         ),
         monthlyExpenses,
         netCashFlow: monthlyRevenue - monthlyExpenses,
       },
-      notifications: state.notifications.map((notification) => ({
+      notifications: dashboardState.notifications.map((notification) => ({
         id: notification.id,
         title: notification.title,
         body: notification.body,
@@ -441,9 +606,42 @@ export function DashboardContent() {
         unread: notification.unread,
         tone: notification.tone,
       })),
-      lastUpdated: state.sales[0]?.createdAt ?? new Date().toISOString(),
+      lastUpdated: dashboardState.sales[0]?.createdAt ?? new Date().toISOString(),
     };
-  }, [bootstrap.branding.display_name, locale, state]);
+  }, [bootstrap.branding.display_name, dashboardState, locale]);
+  const data =
+    apiMode && dashboardQuery.data
+      ? dashboardFromSummary(
+          dashboardQuery.data,
+          bootstrap.branding.display_name,
+          locale,
+          bootstrap.organization.timezone,
+          notifications,
+        )
+      : localData;
+
+  if (apiMode && dashboardQuery.isPending) {
+    return (
+      <div role="status" className="p-6 text-sm text-[var(--muted-foreground)]">
+        Loading dashboard…
+      </div>
+    );
+  }
+  if (apiMode && needsLegacyOverview && fallbackQuery.isPending) {
+    return (
+      <div role="status" className="p-6 text-sm text-[var(--muted-foreground)]">
+        Loading dashboard…
+      </div>
+    );
+  }
+  if (apiMode && dashboardQuery.isError && (!needsLegacyOverview || fallbackQuery.isError)) {
+    return (
+      <div role="alert" className="space-y-3 p-6 text-sm">
+        <p>Dashboard data could not be loaded.</p>
+        <Button onClick={() => void dashboardQuery.refetch()}>Try again</Button>
+      </div>
+    );
+  }
 
   const hour = new Date().getHours();
   const greeting =

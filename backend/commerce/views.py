@@ -130,6 +130,7 @@ class ProductViewSet(CommerceViewSet):
     filterset_fields = ["status", "category", "unit"]
     search_fields = ["name", "sku", "barcode"]
     ordering_fields = ["name", "sku", "selling_price", "created_at"]
+    ordering = ["name", "id"]
     capability_map = {
         "create": "products.manage",
         "update": "products.manage",
@@ -859,7 +860,7 @@ class DashboardView(LocationContextMixin, APIView):
             .select_related("inventory")
             .order_by("inventory__quantity")[:8]
         )
-        period_start = now - timedelta(days=29)
+        period_start = min(month_start, now - timedelta(days=29))
         trend = (
             sales.filter(completed_at__gte=period_start)
             .annotate(day=TruncDay("completed_at", tzinfo=tenant_timezone))

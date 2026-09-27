@@ -10,7 +10,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -19,7 +19,7 @@ from drf_spectacular.utils import OpenApiTypes, extend_schema
 from audit.services import record_audit
 from accounts.permissions import PlatformOwnerOnly
 from config.pagination import SalePagination, TransactionPagination
-from organizations.access import TenantAccessPermission
+from organizations.access import TenantAccessPermission, effective_capabilities
 from organizations.models import Location
 from organizations.tenancy import activate_organization
 
@@ -208,6 +208,72 @@ class ProductViewSet(CommerceViewSet):
             target=product,
             request=self.request,
         )
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        product_id = self.get_object().pk
+        product = Product.objects.select_for_update().get(pk=product_id)
+        serializer = self.get_serializer(product, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        target_stock = serializer.validated_data.pop("target_stock_quantity", None)
+        expected_stock = serializer.validated_data.pop("expected_stock_quantity", None)
+
+        if target_stock is not None:
+            if getattr(request, "support_session", None) is None:
+                capabilities = effective_capabilities(request.membership, self.location)
+                if "*" not in capabilities and "inventory.adjust" not in capabilities:
+                    raise PermissionDenied(
+                        "Your assigned role does not allow stock adjustments."
+                    )
+            balance, _ = InventoryBalance.objects.select_for_update().get_or_create(
+                organization=self.organization,
+                location=self.location,
+                product=product,
+                defaults={"quantity": Decimal("0")},
+            )
+            if balance.quantity != expected_stock:
+                raise ValidationError(
+                    {
+                        "expected_stock_quantity": (
+                            "Quantity on hand has changed. Refresh and try again."
+                        )
+                    }
+                )
+
+        self.perform_update(serializer)
+        record_audit(
+            organization=self.organization,
+            location=self.location,
+            actor=request.user,
+            action="product.updated",
+            target=product,
+            request=request,
+        )
+        if target_stock is not None:
+            delta = target_stock - balance.quantity
+            if delta:
+                apply_stock(
+                    product=product,
+                    delta=delta,
+                    kind=StockMovement.Kind.ADJUSTMENT,
+                    actor=request.user,
+                    source_type="ProductEdit",
+                    source_id=product.id,
+                    note="Product stock edited",
+                )
+                record_audit(
+                    organization=self.organization,
+                    location=self.location,
+                    actor=request.user,
+                    action="inventory.adjusted",
+                    target=product,
+                    request=request,
+                    metadata={"quantity": str(delta), "reason": "Product stock edited"},
+                )
+
+        updated_product = self.get_queryset().get(pk=product.pk)
+        return Response(self.get_serializer(updated_product).data)
 
     @action(detail=True, methods=["post"], url_path="adjust-stock")
     def adjust_stock(self, request, **kwargs):

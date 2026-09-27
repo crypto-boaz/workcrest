@@ -10,7 +10,7 @@ import type {
   StaffRole,
   StaffInput,
 } from "@/lib/business-types";
-import { apiRequest, secureApiRequest } from "@/lib/platform-api";
+import { apiRequest, PlatformApiError, secureApiRequest } from "@/lib/platform-api";
 import type { TenantBootstrap } from "@/lib/platform-types";
 
 type Page<T> = {
@@ -21,7 +21,12 @@ type ApiProduct = components["schemas"]["Product"];
 type ApiCategory = components["schemas"]["Category"];
 
 const page = <T>(path: string) =>
-  apiRequest<Page<T>>(path).catch(() => ({ results: [] }));
+  apiRequest<Page<T>>(path).catch((error: unknown) => {
+    if (error instanceof PlatformApiError && error.status === 403) {
+      return { results: [] };
+    }
+    throw error;
+  });
 
 const locationPath = (locationId: string, resource: string) =>
   `/api/v1/locations/${locationId}/${resource}`;
@@ -50,14 +55,16 @@ export function mapApiProduct(product: ApiProduct): Product {
     reorderLevel: Number(product.reorder_level ?? 0),
     status: product.status ?? "active",
     updatedAt: product.updated_at ?? new Date().toISOString(),
+    version: product.version,
   };
 }
 
 export async function loadBusinessState(
   locationId: string,
   bootstrap: TenantBootstrap,
-  options: { includeSecondary?: boolean } = {},
+  options: { includePrimary?: boolean; includeSecondary?: boolean } = {},
 ): Promise<BusinessState> {
+  const includePrimary = options.includePrimary ?? true;
   const includeSecondary = options.includeSecondary ?? true;
   const [
     products,
@@ -71,13 +78,19 @@ export async function loadBusinessState(
     invitations,
     roles,
   ] = await Promise.all([
-    page<components["schemas"]["Product"]>(
-      locationPath(locationId, "products/?page_size=100"),
-    ),
-    page<components["schemas"]["Sale"]>(locationPath(locationId, "sales/")),
-    page<components["schemas"]["HeldCart"]>(
-      locationPath(locationId, "held-carts/?page_size=100"),
-    ),
+    includePrimary
+      ? page<components["schemas"]["Product"]>(
+          locationPath(locationId, "products/?page_size=100"),
+        )
+      : Promise.resolve({ results: [] }),
+    includePrimary
+      ? page<components["schemas"]["Sale"]>(locationPath(locationId, "sales/"))
+      : Promise.resolve({ results: [] }),
+    includePrimary
+      ? page<components["schemas"]["HeldCart"]>(
+          locationPath(locationId, "held-carts/?page_size=100"),
+        )
+      : Promise.resolve({ results: [] }),
     includeSecondary
       ? page<components["schemas"]["Supplier"]>(
           locationPath(locationId, "suppliers/?page_size=100"),
@@ -88,12 +101,16 @@ export async function loadBusinessState(
           locationPath(locationId, "returns/"),
         )
       : Promise.resolve({ results: [] }),
-    page<components["schemas"]["Expense"]>(
-      locationPath(locationId, "expenses/?page_size=100"),
-    ),
-    page<components["schemas"]["Notification"]>(
-      "/api/v1/notifications/",
-    ),
+    includePrimary
+      ? page<components["schemas"]["Expense"]>(
+          locationPath(locationId, "expenses/?page_size=100"),
+        )
+      : Promise.resolve({ results: [] }),
+    includePrimary
+      ? page<components["schemas"]["Notification"]>(
+          "/api/v1/notifications/",
+        )
+      : Promise.resolve({ results: [] }),
     includeSecondary
       ? page<components["schemas"]["Membership"]>(
           "/api/v1/memberships/?page_size=100",
@@ -224,7 +241,17 @@ export async function loadBusinessState(
               ),
             ),
         status: membership.status ?? "active",
-        permissions: [],
+        permissions: membership.is_owner
+          ? ["all"]
+          : [
+              ...new Set(
+                (membership.roles as Array<{ role_id?: string }>).flatMap(
+                  (assignment) =>
+                    roles.results?.find((role) => role.id === assignment.role_id)
+                      ?.capabilities ?? [],
+                ),
+              ),
+            ],
         lastActive: membership.joined_at ?? new Date().toISOString(),
       })),
       ...(invitations.results ?? [])
@@ -240,7 +267,7 @@ export async function loadBusinessState(
             phone: "",
             role: roleName(invitationRole?.name),
             status: "invited" as const,
-            permissions: [],
+            permissions: invitationRole?.capabilities ?? [],
             lastActive:
               invitation.created_at ?? new Date().toISOString(),
           };
@@ -303,7 +330,10 @@ async function ensureCategory(locationId: string, name: string) {
   if (!categoriesRequest) {
     categoriesRequest = apiRequest<Page<ApiCategory>>(
       locationPath(locationId, "categories/?page_size=100"),
-    );
+    ).catch((error) => {
+      categoryListRequests.delete(locationId);
+      throw error;
+    });
     categoryListRequests.set(locationId, categoriesRequest);
   }
   const categories = await categoriesRequest;
@@ -361,6 +391,8 @@ export const businessApi = {
     locationId: string,
     id: string,
     input: ProductInput,
+    expectedStock: number,
+    expectedVersion?: number,
   ) => {
     const category = await ensureCategory(locationId, input.category);
     const product = await secureApiRequest<ApiProduct>(
@@ -375,7 +407,15 @@ export const businessApi = {
           selling_price: input.price.toFixed(2),
           cost_price: input.cost.toFixed(2),
           reorder_level: input.reorderLevel.toFixed(3),
-          custom_data: {},
+          ...(input.stock !== expectedStock
+            ? {
+                target_stock_quantity: input.stock.toFixed(3),
+                expected_stock_quantity: expectedStock.toFixed(3),
+              }
+            : {}),
+          ...(expectedVersion === undefined
+            ? {}
+            : { expected_version: expectedVersion }),
         }),
       },
     );
@@ -463,7 +503,7 @@ export const businessApi = {
       (item) => item.name?.toLowerCase() === input.role.toLowerCase(),
     );
     if (!role?.id) throw new Error("The selected role is not available.");
-    return secureApiRequest("/api/v1/invitations/", {
+    return secureApiRequest<{ acceptance_token: string }>("/api/v1/invitations/", {
       method: "POST",
       body: JSON.stringify({
         email: input.email,

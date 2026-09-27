@@ -42,44 +42,17 @@ import {
   Workspace,
 } from "@/components/workspace/workspace-ui";
 
-const permissionOptions = [
-  { id: "sales.create", label: "Create sales" },
-  { id: "sales.view", label: "View sales" },
-  { id: "returns.create", label: "Process returns" },
-  { id: "products.manage", label: "Manage products" },
-  { id: "purchases.manage", label: "Manage purchases" },
-  { id: "customers.manage", label: "Manage customers" },
-  { id: "reports.view", label: "View reports" },
-  { id: "staff.view", label: "View staff" },
-] as const;
-
-const roleDefaults: Record<StaffRole, string[]> = {
-  Owner: ["all"],
-  Manager: [
-    "sales.create",
-    "sales.view",
-    "returns.create",
-    "products.manage",
-    "purchases.manage",
-    "customers.manage",
-    "reports.view",
-    "staff.view",
-  ],
-  Cashier: ["sales.create", "sales.view", "returns.create"],
-  Inventory: ["products.manage", "purchases.manage", "reports.view"],
-};
-
 export function StaffPage() {
   const { state, addStaff, toggleStaffStatus } = useBusinessStore();
   const [query, setQuery] = useState("");
   const [role, setRole] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [form, setForm] = useState<StaffInput>({
-    name: "",
     email: "",
-    phone: "",
     role: "Cashier",
-    permissions: roleDefaults.Cashier,
   });
 
   const filtered = state.staff.filter(
@@ -91,30 +64,48 @@ export function StaffPage() {
       (role === "all" || member.role === role),
   );
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    addStaff(form);
-    setForm({
-      name: "",
-      email: "",
-      phone: "",
-      role: "Cashier",
-      permissions: roleDefaults.Cashier,
-    });
-    setModalOpen(false);
+    setSubmitting(true);
+    try {
+      const result = await addStaff(form);
+      if (result.created) {
+        setForm({ email: "", role: "Cashier" });
+        if (result.inviteUrl) setInviteUrl(result.inviteUrl);
+        else setModalOpen(false);
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const updateRole = (value: StaffRole) =>
-    setForm({ ...form, role: value, permissions: roleDefaults[value] });
+    setForm({ ...form, role: value });
+
+  const copyInviteLink = async () => {
+    if (!inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setLinkCopied(true);
+    } catch {
+      setLinkCopied(false);
+    }
+  };
 
   return (
     <Workspace>
       <PageHeader
         eyebrow="Access control"
         title="Staff"
-        description="Invite team members, assign focused roles, and control exactly what each person can access."
+        description="Invite team members and assign roles to control access."
         actions={
-          <Button onClick={() => setModalOpen(true)}>
+          <Button
+            onClick={() => {
+              setInviteUrl(null);
+              setLinkCopied(false);
+              setModalOpen(true);
+            }}
+          >
             <UserPlus className="size-4" /> Invite staff
           </Button>
         }
@@ -215,7 +206,9 @@ export function StaffPage() {
                   <td className="px-4 py-3.5 text-[var(--muted-foreground)]">
                     {member.permissions.includes("all")
                       ? "Full access"
-                      : `${member.permissions.length} permissions`}
+                      : member.permissions.length
+                        ? `${member.permissions.length} permissions`
+                        : "Assigned by role"}
                   </td>
                   <td className="px-4 py-3.5 text-[var(--muted-foreground)]">
                     {member.status === "invited"
@@ -256,103 +249,98 @@ export function StaffPage() {
 
       <Modal
         open={modalOpen}
-        onOpenChange={setModalOpen}
-        title="Invite staff member"
-        description="Set a role and review the permissions before creating the invitation."
+        onOpenChange={(open) => {
+          setModalOpen(open);
+          if (!open) {
+            setInviteUrl(null);
+            setLinkCopied(false);
+          }
+        }}
+        title={inviteUrl ? "Share invitation" : "Invite staff member"}
+        description={
+          inviteUrl
+            ? "Send this link to the email address you invited."
+            : "Choose a role to set this person’s access."
+        }
         size="lg"
       >
-        <form onSubmit={submit}>
-          <div className="grid gap-4 p-5 sm:grid-cols-2">
-            <FormField label="Full name" className="sm:col-span-2">
-              <input
-                required
-                className={inputClass}
-                value={form.name}
-                onChange={(event) =>
-                  setForm({ ...form, name: event.target.value })
-                }
-                placeholder="Staff member’s name"
-              />
-            </FormField>
-            <FormField label="Email">
-              <input
-                required
-                type="email"
-                className={inputClass}
-                value={form.email}
-                onChange={(event) =>
-                  setForm({ ...form, email: event.target.value })
-                }
-                placeholder="name@company.com"
-              />
-            </FormField>
-            <FormField label="Phone">
-              <input
-                required
-                className={inputClass}
-                value={form.phone}
-                onChange={(event) =>
-                  setForm({ ...form, phone: event.target.value })
-                }
-                placeholder="0800 000 0000"
-              />
-            </FormField>
-            <FormField label="Role" className="sm:col-span-2">
-              <select
-                className={inputClass}
-                value={form.role}
-                onChange={(event) =>
-                  updateRole(event.target.value as StaffRole)
-                }
-              >
-                <option value="Manager">Manager</option>
-                <option value="Cashier">Cashier</option>
-                <option value="Inventory">Inventory</option>
-              </select>
-            </FormField>
-            <fieldset className="sm:col-span-2">
-              <legend className="text-xs font-semibold">Permissions</legend>
-              <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">
-                Role defaults are preselected and can be fine-tuned.
+        {inviteUrl ? (
+          <div>
+            <div className="space-y-3 p-5">
+              <label className="block text-xs font-semibold">
+                Invitation link
+                <input
+                  className={`${inputClass} mt-2`}
+                  readOnly
+                  value={inviteUrl}
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+              </label>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                The link expires after three days and works only for the invited
+                email address.
               </p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {permissionOptions.map((permission) => (
-                  <label
-                    key={permission.id}
-                    className="flex items-center gap-2.5 rounded-lg border border-[var(--border)] p-3 text-xs"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={form.permissions.includes(permission.id)}
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          permissions: event.target.checked
-                            ? [...form.permissions, permission.id]
-                            : form.permissions.filter(
-                                (item) => item !== permission.id,
-                              ),
-                        })
-                      }
-                      className="size-4 accent-[var(--primary)]"
-                    />
-                    {permission.label}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+            </div>
+            <ModalFooter>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setModalOpen(false)}
+              >
+                Done
+              </Button>
+              <Button type="button" onClick={copyInviteLink}>
+                {linkCopied ? "Copied" : "Copy link"}
+              </Button>
+            </ModalFooter>
           </div>
-          <ModalFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit">Create invitation</Button>
-          </ModalFooter>
-        </form>
+        ) : (
+          <form onSubmit={submit}>
+            <div className="grid gap-4 p-5">
+              <FormField label="Email">
+                <input
+                  required
+                  type="email"
+                  className={inputClass}
+                  value={form.email}
+                  onChange={(event) =>
+                    setForm({ ...form, email: event.target.value })
+                  }
+                  placeholder="name@company.com"
+                />
+              </FormField>
+              <FormField label="Role">
+                <select
+                  className={inputClass}
+                  value={form.role}
+                  onChange={(event) =>
+                    updateRole(event.target.value as StaffRole)
+                  }
+                >
+                  <option value="Manager">Manager</option>
+                  <option value="Cashier">Cashier</option>
+                  <option value="Inventory">Inventory</option>
+                </select>
+              </FormField>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Permissions are set by the selected role.
+              </p>
+            </div>
+            <ModalFooter>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={submitting}
+                onClick={() => setModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? "Creating…" : "Create invitation"}
+              </Button>
+            </ModalFooter>
+          </form>
+        )}
       </Modal>
     </Workspace>
   );

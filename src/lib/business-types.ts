@@ -13,6 +13,7 @@ export interface Product {
   reorderLevel: number;
   status: ProductStatus;
   updatedAt: string;
+  version?: number;
 }
 
 export interface Customer {
@@ -220,11 +221,8 @@ export interface ReturnInput {
 }
 
 export interface StaffInput {
-  name: string;
   email: string;
-  phone: string;
   role: StaffRole;
-  permissions: string[];
 }
 
 export interface ExpenseInput {

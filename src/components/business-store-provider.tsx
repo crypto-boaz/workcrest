@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -43,7 +44,12 @@ interface BusinessStoreValue {
   hydrated: boolean;
   toast: ToastMessage | null;
   addProduct: (input: ProductInput) => void;
-  updateProduct: (id: string, input: ProductInput) => void;
+  updateProduct: (
+    id: string,
+    input: ProductInput,
+    expectedStock: number,
+    expectedVersion?: number,
+  ) => Promise<boolean>;
   archiveProduct: (id: string) => void;
   addCustomer: (input: CustomerInput) => void;
   completeSale: (input: CompleteSaleInput) => Sale;
@@ -57,7 +63,9 @@ interface BusinessStoreValue {
   createPurchase: (input: PurchaseInput) => void;
   receivePurchase: (id: string) => void;
   createReturn: (input: ReturnInput) => void;
-  addStaff: (input: StaffInput) => void;
+  addStaff: (
+    input: StaffInput,
+  ) => Promise<{ created: boolean; inviteUrl?: string }>;
   toggleStaffStatus: (id: string) => void;
   addExpense: (input: ExpenseInput) => void;
   markNotificationRead: (id: string) => void;
@@ -124,6 +132,8 @@ export function BusinessStoreProvider({
       : apiMode
         ? "pending"
         : "mock";
+  const activeScopeRef = useRef(activeScope);
+  const refreshVersion = useRef(0);
   const [state, setState] = useState<BusinessState>(() =>
     apiMode ? emptyBusinessState(platform) : cloneSeed(),
   );
@@ -132,6 +142,10 @@ export function BusinessStoreProvider({
   );
   const [hydrated, setHydrated] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
+
+  useEffect(() => {
+    activeScopeRef.current = activeScope;
+  }, [activeScope]);
 
   useEffect(() => {
     if (apiMode && platform) return;
@@ -166,6 +180,8 @@ export function BusinessStoreProvider({
       platform.currentLocation.id,
       platform.bootstrap,
     );
+    if (activeScopeRef.current !== activeScope) return;
+    refreshVersion.current += 1;
     setState(nextState);
     setLoadedScope(activeScope);
   }, [activeScope, platform]);
@@ -182,11 +198,29 @@ export function BusinessStoreProvider({
           setLoadedScope(activeScope);
           setHydrated(true);
           // Secondary modules should never delay the first usable dashboard.
-          void loadBusinessState(platform.currentLocation.id, platform.bootstrap)
-            .then((completeState) => {
-              if (active) setState(completeState);
+          const startingRefreshVersion = refreshVersion.current;
+          void loadBusinessState(platform.currentLocation.id, platform.bootstrap, {
+            includePrimary: false,
+          })
+            .then((secondaryState) => {
+              if (active && refreshVersion.current === startingRefreshVersion) {
+                setState((current) => ({
+                  ...current,
+                  suppliers: secondaryState.suppliers,
+                  returns: secondaryState.returns,
+                  staff: secondaryState.staff,
+                }));
+              }
             })
-            .catch(() => undefined);
+            .catch((error) => {
+              if (active) {
+                showToast(
+                  "Could not load some workspace data",
+                  error instanceof Error ? error.message : "Try refreshing the page.",
+                  "error",
+                );
+              }
+            });
         }
       })
       .catch((error) => {
@@ -321,42 +355,32 @@ export function BusinessStoreProvider({
   );
 
   const updateProduct = useCallback(
-    (id: string, input: ProductInput) => {
+    async (
+      id: string,
+      input: ProductInput,
+      expectedStock: number,
+      expectedVersion?: number,
+    ): Promise<boolean> => {
       if (apiMode && platform) {
-        const existing = state.products.find((product) => product.id === id);
-        const stockDelta = input.stock - (existing?.stock ?? input.stock);
-        if (existing) {
-          upsertProduct({
-            ...existing,
-            ...input,
-            updatedAt: new Date().toISOString(),
-          });
+        try {
+          const product = await businessApi.updateProduct(
+            platform.currentLocation.id,
+            id,
+            input,
+            expectedStock,
+            expectedVersion,
+          );
+          upsertProduct(product);
+          showToast("Product updated", `${input.name} was saved.`);
+          return true;
+        } catch (error) {
+          showToast(
+            "Could not update product",
+            error instanceof Error ? error.message : "Try again.",
+            "error",
+          );
+          return false;
         }
-        void businessApi
-          .updateProduct(platform.currentLocation.id, id, input)
-          .then((product) =>
-            stockDelta
-              ? businessApi
-                  .adjustStock(
-                    platform.currentLocation.id,
-                    id,
-                    stockDelta,
-                    "Product stock edited",
-                  )
-                  .then(() => ({ ...product, stock: input.stock }))
-              : product,
-          )
-          .then((product) => upsertProduct(product))
-          .then(() => showToast("Product updated", `${input.name} was saved.`))
-          .catch((error) => {
-            if (existing) upsertProduct(existing);
-            showToast(
-              "Could not update product",
-              error instanceof Error ? error.message : "Try again.",
-              "error",
-            );
-          });
-        return;
       }
       setState((current) => ({
         ...current,
@@ -371,8 +395,9 @@ export function BusinessStoreProvider({
         ),
       }));
       showToast("Product updated", `${input.name} was saved.`);
+      return true;
     },
-    [platform, showToast, state.products, upsertProduct],
+    [platform, showToast, upsertProduct],
   );
 
   const archiveProduct = useCallback(
@@ -858,31 +883,59 @@ export function BusinessStoreProvider({
   );
 
   const addStaff = useCallback(
-    (input: StaffInput) => {
+    async (
+      input: StaffInput,
+    ): Promise<{ created: boolean; inviteUrl?: string }> => {
       if (apiMode && platform) {
-        void businessApi
-          .inviteStaff(input, platform.currentLocation.id)
-          .then(refreshBusinessState)
-          .then(() =>
-            showToast(
-              "Invitation created",
-              `${input.name} was invited as ${input.role}.`,
-            ),
-          )
-          .catch((error) =>
-            showToast(
-              "Could not create invitation",
-              error instanceof Error ? error.message : "Try again.",
-              "error",
-            ),
+        try {
+          const invitation = await businessApi.inviteStaff(
+            input,
+            platform.currentLocation.id,
           );
-        return;
+          const inviteUrl = new URL("/auth/invite", window.location.origin);
+          inviteUrl.searchParams.set(
+            "organization",
+            platform.bootstrap.organization.slug,
+          );
+          inviteUrl.searchParams.set("token", invitation.acceptance_token);
+          const inviteScope = activeScope;
+          void loadBusinessState(platform.currentLocation.id, platform.bootstrap, {
+            includePrimary: false,
+          })
+            .then((updated) => {
+              if (activeScopeRef.current === inviteScope) {
+                setState((current) => ({ ...current, staff: updated.staff }));
+              }
+            })
+            .catch(() =>
+              showToast(
+                "Staff list could not refresh",
+                "The invitation was created. Refresh the page to see it in the list.",
+                "error",
+              ),
+            );
+          showToast(
+            "Invitation created",
+            `${input.email} was invited as ${input.role}.`,
+          );
+          return { created: true, inviteUrl: inviteUrl.toString() };
+        } catch (error) {
+          showToast(
+            "Could not create invitation",
+            error instanceof Error ? error.message : "Try again.",
+            "error",
+          );
+          return { created: false };
+        }
       }
       setState((current) => ({
         ...current,
         staff: [
           {
             ...input,
+            name: input.email.split("@")[0] || "Invited staff",
+            phone: "",
+            permissions: [],
             id: createId("stf"),
             status: "invited",
             lastActive: new Date().toISOString(),
@@ -890,9 +943,10 @@ export function BusinessStoreProvider({
           ...current.staff,
         ],
       }));
-      showToast("Invitation created", `${input.name} was added as ${input.role}.`);
+      showToast("Invitation created", `${input.email} was added as ${input.role}.`);
+      return { created: true };
     },
-    [platform, refreshBusinessState, showToast],
+    [activeScope, platform, showToast],
   );
 
   const toggleStaffStatus = useCallback(

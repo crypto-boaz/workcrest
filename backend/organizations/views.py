@@ -28,6 +28,7 @@ from .models import (
     Invitation,
     Location,
     Membership,
+    Organization,
     Role,
     RoleAssignment,
     TenantModule,
@@ -37,6 +38,7 @@ from .serializers import (
     CompanyLogoSerializer,
     CompanySettingsSerializer,
     CustomFieldSerializer,
+    InvitationAcceptanceSerializer,
     InvitationSerializer,
     LocationSerializer,
     MembershipSerializer,
@@ -46,7 +48,7 @@ from .serializers import (
     RoleSerializer,
     UserSummarySerializer,
 )
-from .tenancy import TenantContextMixin
+from .tenancy import TenantContextMixin, activate_organization
 
 
 class TenantManifestView(TenantContextMixin, APIView):
@@ -516,14 +518,31 @@ class CompanyLogoView(CompanySettingsView):
 class InvitationAcceptanceView(TenantContextMixin, APIView):
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(request=OpenApiTypes.OBJECT, responses=MembershipSerializer)
+    @extend_schema(
+        request=InvitationAcceptanceSerializer,
+        responses=MembershipSerializer,
+    )
     @transaction.atomic
     def post(self, request):
-        raw_token = str(request.data.get("token", ""))
+        serializer = InvitationAcceptanceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        raw_token = serializer.validated_data["token"]
+        organization_slug = serializer.validated_data.get("organization_slug")
+        organization = (
+            get_object_or_404(Organization, slug=organization_slug)
+            if organization_slug
+            else request.organization
+        )
+        if organization is None:
+            raise ValidationError(
+                {"organization_slug": "Specify the company for this invitation."}
+            )
+        activate_organization(organization.id)
+        request.organization = organization
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
         invitation = get_object_or_404(
             Invitation.objects.select_for_update().prefetch_related("locations"),
-            organization=request.organization,
+            organization=organization,
             token_hash=token_hash,
         )
         if invitation.email.lower() != request.user.email.lower():
@@ -540,7 +559,7 @@ class InvitationAcceptanceView(TenantContextMixin, APIView):
                 status=status.HTTP_410_GONE,
             )
         membership, _ = Membership.objects.get_or_create(
-            organization=request.organization,
+            organization=organization,
             user=request.user,
             defaults={"status": Membership.Status.ACTIVE},
         )
@@ -550,14 +569,14 @@ class InvitationAcceptanceView(TenantContextMixin, APIView):
         if locations:
             for location in locations:
                 RoleAssignment.objects.get_or_create(
-                    organization=request.organization,
+                    organization=organization,
                     membership=membership,
                     role=invitation.role,
                     location=location,
                 )
         else:
             RoleAssignment.objects.get_or_create(
-                organization=request.organization,
+                organization=organization,
                 membership=membership,
                 role=invitation.role,
                 location=None,
@@ -565,4 +584,9 @@ class InvitationAcceptanceView(TenantContextMixin, APIView):
         invitation.status = Invitation.Status.ACCEPTED
         invitation.accepted_at = timezone.now()
         invitation.save(update_fields=["status", "accepted_at", "updated_at"])
+        request.session["active_tenant_slug"] = organization.slug
+        if settings.DEBUG:
+            request.session["debug_tenant_slug"] = organization.slug
+        request.user.active_organization_id = organization.id
+        request.user.save(update_fields=["active_organization_id"])
         return Response(MembershipSerializer(membership).data)

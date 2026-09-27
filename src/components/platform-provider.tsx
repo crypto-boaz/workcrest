@@ -71,13 +71,13 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
     queryKey: ["tenant-bootstrap"],
     queryFn: () =>
       apiMode ? platformApi.bootstrap() : Promise.resolve(mockBootstrap),
-    enabled: Boolean(manifestQuery.data),
     staleTime: 60_000,
     retry: false,
   });
   const manifest = manifestQuery.data ?? mockManifest;
   const bootstrap = bootstrapQuery.data ?? mockBootstrap;
-  const ready = !apiMode || Boolean(bootstrapQuery.data);
+  const ready =
+    !apiMode || Boolean(manifestQuery.data && bootstrapQuery.data);
   const locationStorageKey = `saas.location.${bootstrap.organization.id}.${bootstrap.user.id}`;
   const [locationId, setLocationId] = useState(
     bootstrap.locations.find((location) => location.is_primary)?.id ??
@@ -85,6 +85,8 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
+    if (!ready) return;
+
     const timer = window.setTimeout(() => {
       const stored = window.localStorage.getItem(locationStorageKey);
       if (
@@ -100,9 +102,11 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [bootstrap.locations, locationStorageKey]);
+  }, [bootstrap.locations, locationStorageKey, ready]);
 
   useEffect(() => {
+    if (!ready) return;
+
     const root = document.documentElement;
     configureFormatting({
       locale: bootstrap.organization.locale,
@@ -142,6 +146,7 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
     bootstrap.organization.currency,
     bootstrap.organization.locale,
     manifest.branding,
+    ready,
   ]);
 
   const currentLocation =
@@ -233,6 +238,24 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
             <Link href="/auth/login">Sign in</Link>
           </Button>
         </section>
+      </main>
+    );
+  }
+
+  if (apiMode && !ready) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[var(--background)] p-6">
+        <div
+          aria-live="polite"
+          className="flex items-center gap-3 text-sm text-[var(--muted-foreground)]"
+          role="status"
+        >
+          <span
+            aria-hidden="true"
+            className="size-4 animate-spin rounded-full border-2 border-[var(--muted)] border-t-[var(--primary)]"
+          />
+          Loading your workspace…
+        </div>
       </main>
     );
   }

@@ -64,6 +64,7 @@ export function ProductsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<ProductInput>(emptyProduct);
+  const [saving, setSaving] = useState(false);
   const [skuEdited, setSkuEdited] = useState(false);
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
@@ -124,10 +125,20 @@ export function ProductsPage() {
     setModalOpen(true);
   };
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (editing) updateProduct(editing.id, form);
-    else addProduct(form);
+    if (editing) {
+      setSaving(true);
+      try {
+        if (await updateProduct(editing.id, form, editing.stock, editing.version)) {
+          setModalOpen(false);
+        }
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+    addProduct(form);
     setModalOpen(false);
   };
 
@@ -432,6 +443,7 @@ export function ProductsPage() {
               <input
                 required
                 min="0"
+                step="0.001"
                 type="number"
                 className={inputClass}
                 value={form.stock || ""}
@@ -463,12 +475,13 @@ export function ProductsPage() {
             <Button
               type="button"
               variant="secondary"
+              disabled={saving}
               onClick={() => setModalOpen(false)}
             >
               Cancel
             </Button>
-            <Button type="submit">
-              {editing ? "Save changes" : "Add product"}
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving…" : editing ? "Save changes" : "Add product"}
             </Button>
           </ModalFooter>
         </form>

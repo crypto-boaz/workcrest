@@ -1407,6 +1407,10 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        InvitationAcceptance: {
+            token: string;
+            organization_slug?: string;
+        };
         /**
          * @description * `pending` - Pending
          *     * `accepted` - Accepted
@@ -2169,6 +2173,12 @@ export interface components {
              * @default 0.000
              */
             opening_quantity: string;
+            /** Format: decimal */
+            target_stock_quantity?: string;
+            /** Format: decimal */
+            expected_stock_quantity?: string;
+            /** @minimum 1 */
+            expected_version?: number;
             status?: components["schemas"]["ProductStatusEnum"];
             custom_data?: unknown;
             readonly version?: number;
@@ -2370,6 +2380,12 @@ export interface components {
              * @default 0.000
              */
             opening_quantity: string;
+            /** Format: decimal */
+            target_stock_quantity?: string;
+            /** Format: decimal */
+            expected_stock_quantity?: string;
+            /** @minimum 1 */
+            expected_version?: number;
             status?: components["schemas"]["ProductStatusEnum"];
             custom_data?: unknown;
             readonly version: number;
@@ -3261,17 +3277,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-                "application/x-www-form-urlencoded": {
-                    [key: string]: unknown;
-                };
-                "multipart/form-data": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["InvitationAcceptance"];
+                "application/x-www-form-urlencoded": components["schemas"]["InvitationAcceptance"];
+                "multipart/form-data": components["schemas"]["InvitationAcceptance"];
             };
         };
         responses: {

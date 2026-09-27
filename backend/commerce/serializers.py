@@ -67,6 +67,25 @@ class ProductSerializer(serializers.ModelSerializer):
         required=False,
         default=Decimal("0"),
     )
+    target_stock_quantity = serializers.DecimalField(
+        max_digits=18,
+        decimal_places=3,
+        min_value=Decimal("0"),
+        write_only=True,
+        required=False,
+    )
+    expected_stock_quantity = serializers.DecimalField(
+        max_digits=18,
+        decimal_places=3,
+        min_value=Decimal("0"),
+        write_only=True,
+        required=False,
+    )
+    expected_version = serializers.IntegerField(
+        min_value=1,
+        write_only=True,
+        required=False,
+    )
     category_name = serializers.CharField(source="category.name", read_only=True)
 
     class Meta:
@@ -85,6 +104,9 @@ class ProductSerializer(serializers.ModelSerializer):
             "reorder_level",
             "stock_quantity",
             "opening_quantity",
+            "target_stock_quantity",
+            "expected_stock_quantity",
+            "expected_version",
             "status",
             "custom_data",
             "version",
@@ -162,6 +184,23 @@ class ProductSerializer(serializers.ModelSerializer):
         )
 
     def validate(self, attrs):
+        if self.instance is None and "expected_version" in attrs:
+            raise serializers.ValidationError(
+                {"expected_version": "Version checks apply to existing products."}
+            )
+        changing_stock = "target_stock_quantity" in attrs
+        checking_stock = "expected_stock_quantity" in attrs
+        if changing_stock != checking_stock or (
+            self.instance is None and changing_stock
+        ):
+            raise serializers.ValidationError(
+                {
+                    "target_stock_quantity": (
+                        "Provide both target and expected stock quantities "
+                        "when editing an existing product."
+                    )
+                }
+            )
         if self.instance is None or "custom_data" in attrs:
             attrs["custom_data"] = self.validate_custom_data(
                 attrs.get("custom_data", {})
@@ -170,11 +209,26 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         validated_data.pop("opening_quantity", None)
-        supplied_version = self.initial_data.get("version")
-        if supplied_version is not None and int(supplied_version) != instance.version:
-            raise serializers.ValidationError(
-                {"version": "This product has changed. Refresh and try again."}
-            )
+        validated_data.pop("target_stock_quantity", None)
+        validated_data.pop("expected_stock_quantity", None)
+        supplied_version = validated_data.pop(
+            "expected_version", self.initial_data.get("version")
+        )
+        if supplied_version is not None:
+            try:
+                version = int(supplied_version)
+            except (TypeError, ValueError) as exc:
+                raise serializers.ValidationError(
+                    {"expected_version": "Enter a valid product version."}
+                ) from exc
+            if version != instance.version:
+                raise serializers.ValidationError(
+                    {
+                        "expected_version": (
+                            "This product has changed. Refresh and try again."
+                        )
+                    }
+                )
         validated_data["version"] = instance.version + 1
         return super().update(instance, validated_data)
 

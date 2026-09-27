@@ -28,16 +28,26 @@ function formatWorkspaceSlug(value: string) {
     .replace(/-+$/g, "");
 }
 
+function invitationReturnPath() {
+  if (typeof window === "undefined") return null;
+  const candidate = new URLSearchParams(window.location.search).get("next");
+  return candidate?.startsWith("/auth/invite?") ? candidate : null;
+}
+
 export function AuthPage({ mode }: { mode: "login" | "signup" }) {
-  const [manifest, setManifest] =
-    useState<TenantManifest>(mockPlatformManifest);
+  const [manifest, setManifest] = useState<TenantManifest | null>(() =>
+    apiMode ? null : mockPlatformManifest,
+  );
+  const brandName = manifest?.branding.display_name ?? "Workcrest";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [nextPath, setNextPath] = useState<string | null>(null);
 
   useEffect(() => {
+    setNextPath(invitationReturnPath());
     if (!apiMode) return;
     void platformApi.manifest().then(setManifest).catch(() => undefined);
   }, []);
@@ -51,7 +61,9 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
       if (mode === "signup") {
         await platformApi.signup(email, password);
         setMessage(
-          "Account created. Check your email to verify the address, then sign in.",
+          nextPath
+            ? "Account created. Verify your email, then return here and sign in to accept the invitation."
+            : "Account created. Check your email to verify the address, then sign in.",
         );
         return;
       }
@@ -67,6 +79,11 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
             throw loginError;
           }
         }
+      }
+      const returnPath = invitationReturnPath();
+      if (returnPath) {
+        window.location.assign(returnPath);
+        return;
       }
       try {
         await platformApi.bootstrap();
@@ -100,7 +117,7 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
             <Building2 className="size-5" />
           </span>
           <div>
-            <p className="font-semibold">{manifest.branding.display_name}</p>
+            <p className="font-semibold">{brandName}</p>
             <p className="text-xs text-[var(--sidebar-muted)]">
               Business operations
             </p>
@@ -127,7 +144,7 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
       <section className="grid place-items-center p-6 sm:p-10">
         <div className="w-full max-w-sm">
           <p className="text-sm font-semibold text-[var(--primary)]">
-            {manifest.branding.display_name}
+            {brandName}
           </p>
           <h2 className="mt-3 text-2xl font-semibold tracking-tight">
             {mode === "login" ? "Welcome back" : "Create your account"}
@@ -135,7 +152,9 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
           <p className="mt-2 text-sm text-[var(--muted-foreground)]">
             {mode === "login"
               ? "Sign in to continue to your company workspace."
-              : "Start with your account. Company setup follows after verification."}
+              : nextPath
+                ? "Create an account with the invited email address. You can join the workspace after verification."
+                : "Start with your account. Company setup follows after verification."}
           </p>
 
           <form className="mt-8 space-y-4" onSubmit={submit}>
@@ -186,7 +205,11 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
             {mode === "login" ? "New to the platform?" : "Already registered?"}{" "}
             <Link
               className="font-semibold text-[var(--primary)] hover:underline"
-              href={mode === "login" ? "/auth/signup" : "/auth/login"}
+              href={
+                `${mode === "login" ? "/auth/signup" : "/auth/login"}${
+                  nextPath ? `?next=${encodeURIComponent(nextPath)}` : ""
+                }`
+              }
             >
               {mode === "login" ? "Create an account" : "Sign in"}
             </Link>

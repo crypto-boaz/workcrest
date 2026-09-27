@@ -33,6 +33,7 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql://workcrest_migrator:workcrest-migrator@postgres:5432/workcrest
+      REDIS_URL: redis://redis:6379/0
     command: >
       sh -c "python manage.py migrate &&
              python manage.py configure_database_roles --runtime-role workcrest_runtime"
@@ -51,6 +52,7 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql://workcrest_runtime:workcrest-runtime@postgres:5432/workcrest
+      REDIS_URL: redis://redis:6379/0
     command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3
     volumes:
       - ./backend:/app
@@ -69,6 +71,7 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql://workcrest_runtime:workcrest-runtime@postgres:5432/workcrest
+      REDIS_URL: redis://redis:6379/0
     command: celery -A config worker -l info
     volumes:
       - ./backend:/app
@@ -85,6 +88,7 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql://workcrest_runtime:workcrest-runtime@postgres:5432/workcrest
+      REDIS_URL: redis://redis:6379/0
     command: celery -A config beat -l info
     volumes:
       - ./backend:/app

@@ -578,16 +578,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: {}
+              $ref: '#/components/schemas/InvitationAcceptance'
           application/x-www-form-urlencoded:
             schema:
-              type: object
-              additionalProperties: {}
+              $ref: '#/components/schemas/InvitationAcceptance'
           multipart/form-data:
             schema:
-              type: object
-              additionalProperties: {}
+              $ref: '#/components/schemas/InvitationAcceptance'
+        required: true
       security:
       - cookieAuth: []
       responses:
@@ -5078,6 +5076,16 @@ components:
       - id
       - role
       - status
+    InvitationAcceptance:
+      type: object
+      properties:
+        token:
+          type: string
+        organization_slug:
+          type: string
+          pattern: ^[-a-zA-Z0-9_]+$
+      required:
+      - token
     InvitationStatusEnum:
       enum:
       - pending
@@ -6462,6 +6470,20 @@ components:
           pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
           writeOnly: true
           default: '0.000'
+        target_stock_quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+          writeOnly: true
+        expected_stock_quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+          writeOnly: true
+        expected_version:
+          type: integer
+          minimum: 1
+          writeOnly: true
         status:
           $ref: '#/components/schemas/ProductStatusEnum'
         custom_data: {}
@@ -6883,6 +6905,20 @@ components:
           pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
           writeOnly: true
           default: '0.000'
+        target_stock_quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+          writeOnly: true
+        expected_stock_quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+          writeOnly: true
+        expected_version:
+          type: integer
+          minimum: 1
+          writeOnly: true
         status:
           $ref: '#/components/schemas/ProductStatusEnum'
         custom_data: {}

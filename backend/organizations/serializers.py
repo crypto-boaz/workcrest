@@ -352,6 +352,11 @@ class InvitationSerializer(serializers.ModelSerializer):
         return invitation
 
 
+class InvitationAcceptanceSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    organization_slug = serializers.SlugField(required=False)
+
+
 class ModuleSerializer(serializers.ModelSerializer):
     code = serializers.CharField(source="module.code", read_only=True)
     name = serializers.CharField(source="module.name", read_only=True)

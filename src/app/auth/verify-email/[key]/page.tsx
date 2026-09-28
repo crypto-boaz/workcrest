@@ -6,7 +6,9 @@ import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { mockManifest } from "@/lib/mock-platform";
+import { TenantLogo } from "@/components/tenant-logo";
+import { WorkcrestLogo } from "@/components/workcrest-logo";
+import { mockPlatformManifest } from "@/lib/mock-platform";
 import { apiMode, platformApi, PlatformApiError } from "@/lib/platform-api";
 import type { TenantManifest } from "@/lib/platform-types";
 
@@ -15,7 +17,7 @@ type VerificationState = "checking" | "verified" | "failed";
 export default function VerifyEmailPage() {
   const params = useParams<{ key: string }>();
   const started = useRef(false);
-  const [manifest, setManifest] = useState<TenantManifest>(mockManifest);
+  const [manifest, setManifest] = useState<TenantManifest>(mockPlatformManifest);
   const [state, setState] = useState<VerificationState>("checking");
   const [message, setMessage] = useState("Confirming your email address…");
 
@@ -94,9 +96,17 @@ export default function VerifyEmailPage() {
             className={state === "checking" ? "size-6 animate-spin" : "size-6"}
           />
         </span>
-        <p className="mt-5 text-sm font-semibold text-[var(--primary)]">
-          {manifest.branding.display_name}
-        </p>
+        <div className="mt-5 flex items-center justify-center gap-2.5">
+          <TenantLogo
+            src={manifest.branding.logo_url}
+            alt={`${manifest.branding.display_name} logo`}
+            className="size-7 place-items-center rounded-md"
+            fallback={<WorkcrestLogo className="size-7 rounded-md" />}
+          />
+          <p className="text-sm font-semibold text-[var(--primary)]">
+            {manifest.branding.display_name}
+          </p>
+        </div>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">
           {state === "verified"
             ? "Email verified"

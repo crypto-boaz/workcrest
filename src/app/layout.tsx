@@ -11,6 +11,13 @@ export const metadata: Metadata = {
   },
   description: "A secure, modern business operations workspace.",
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/workcrest-rising-crest-32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [{ url: "/workcrest-rising-crest-180.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { WorkcrestLogo } from "@/components/workcrest-logo";
 import { platformApi, secureApiRequest } from "@/lib/platform-api";
 
 type AuthState = "checking" | "anonymous" | "authenticated" | "invalid" | "error";
@@ -86,7 +87,10 @@ export function InvitationPage() {
   return (
     <main className="grid min-h-screen place-items-center bg-[var(--background)] p-6">
       <section className="w-full max-w-md rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm sm:p-8">
-        <p className="text-sm font-semibold text-[var(--primary)]">Workcrest</p>
+        <div className="flex items-center gap-2.5">
+          <WorkcrestLogo className="size-7 rounded-md" />
+          <p className="text-sm font-semibold text-[var(--primary)]">Workcrest</p>
+        </div>
         <h1 className="mt-2 text-2xl font-semibold">Join a workspace</h1>
         <p className="mt-2 text-sm text-[var(--muted-foreground)]">
           {authState === "invalid"

@@ -189,12 +189,9 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
     root.style.setProperty("--tenant-accent", manifest.branding.accent_color);
     document.title = `${manifest.branding.display_name} · Business operations`;
     if (manifest.branding.favicon_url) {
-      const existing =
-        document.querySelector<HTMLLinkElement>("link[rel='icon']");
-      const favicon = existing ?? document.createElement("link");
-      if (!existing) document.head.appendChild(favicon);
-      favicon.rel = "icon";
-      favicon.href = manifest.branding.favicon_url;
+      document.querySelectorAll<HTMLLinkElement>("link[rel='icon']").forEach((favicon) => {
+        favicon.href = manifest.branding.favicon_url;
+      });
     }
   }, [
     bootstrap.organization.currency,

@@ -1,10 +1,12 @@
 "use client";
 
-import { ArrowRight, Building2, LoaderCircle, LockKeyhole } from "lucide-react";
+import { ArrowRight, LoaderCircle, LockKeyhole } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { TenantLogo } from "@/components/tenant-logo";
+import { WorkcrestLogo } from "@/components/workcrest-logo";
 import { mockPlatformManifest } from "@/lib/mock-platform";
 import {
   apiMode,
@@ -113,9 +115,12 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
     <main className="grid min-h-screen bg-[var(--background)] lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.75fr)]">
       <section className="hidden border-r border-[var(--border)] bg-[var(--sidebar)] p-12 text-white lg:flex lg:flex-col">
         <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-lg bg-[var(--primary)]">
-            <Building2 className="size-5" />
-          </span>
+          <TenantLogo
+            src={manifest?.branding.logo_url}
+            alt={`${brandName} logo`}
+            className="size-10 place-items-center rounded-lg"
+            fallback={<WorkcrestLogo className="size-10" />}
+          />
           <div>
             <p className="font-semibold">{brandName}</p>
             <p className="text-xs text-[var(--sidebar-muted)]">
@@ -143,9 +148,15 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
 
       <section className="grid place-items-center p-6 sm:p-10">
         <div className="w-full max-w-sm">
-          <p className="text-sm font-semibold text-[var(--primary)]">
-            {brandName}
-          </p>
+          <div className="flex items-center gap-2.5">
+            <TenantLogo
+              src={manifest?.branding.logo_url}
+              alt={`${brandName} logo`}
+              className="size-7 place-items-center rounded-md"
+              fallback={<WorkcrestLogo className="size-7 rounded-md" />}
+            />
+            <p className="text-sm font-semibold text-[var(--primary)]">{brandName}</p>
+          </div>
           <h2 className="mt-3 text-2xl font-semibold tracking-tight">
             {mode === "login" ? "Welcome back" : "Create your account"}
           </h2>
@@ -300,9 +311,10 @@ export function OnboardingPage() {
   return (
     <main className="grid min-h-screen place-items-center bg-[var(--background)] p-6">
       <section className="w-full max-w-xl rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm sm:p-8">
-        <p className="text-sm font-semibold text-[var(--primary)]">
-          Company setup
-        </p>
+        <div className="flex items-center gap-2.5">
+          <WorkcrestLogo className="size-7 rounded-md" />
+          <p className="text-sm font-semibold text-[var(--primary)]">Company setup</p>
+        </div>
         <h1 className="mt-2 text-2xl font-semibold">Create your workspace</h1>
         <p className="mt-2 text-sm text-[var(--muted-foreground)]">
           {authState === "anonymous"

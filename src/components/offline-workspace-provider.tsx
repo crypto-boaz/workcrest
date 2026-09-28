@@ -35,7 +35,7 @@ export function OfflineWorkspaceProvider({ children }: { children: React.ReactNo
 }
 
 function OfflineScopeRuntime({ children }: { children: React.ReactNode }) {
-  const { bootstrap, currentLocation, offline } = usePlatform();
+  const { apiMode, bootstrap, currentLocation, offline } = usePlatform();
   const queryClient = useQueryClient();
   const scope = offlineScope(bootstrap.organization.id, currentLocation.id);
   const [products, setProducts] = useState<ApiProduct[]>([]);
@@ -66,7 +66,7 @@ function OfflineScopeRuntime({ children }: { children: React.ReactNode }) {
   }, [scope, bootstrap.organization.id, bootstrap.user.id, currentLocation.id]);
 
   const refreshCatalogue = useCallback(async (force = false) => {
-    if (offline || !navigator.onLine || loadingCatalogue.current === scope) return;
+    if (!apiMode || offline || !navigator.onLine || loadingCatalogue.current === scope) return;
     loadingCatalogue.current = scope;
     const targetScope = scope;
     try {
@@ -92,7 +92,7 @@ function OfflineScopeRuntime({ children }: { children: React.ReactNode }) {
     } finally {
       if (loadingCatalogue.current === targetScope) loadingCatalogue.current = null;
     }
-  }, [currentLocation.id, offline, scope]);
+  }, [apiMode, currentLocation.id, offline, scope]);
 
   const rememberProducts = useCallback(async (pageProducts: ApiProduct[]) => {
     const current = await offlineStorage.getCatalogue(scope);
@@ -109,7 +109,7 @@ function OfflineScopeRuntime({ children }: { children: React.ReactNode }) {
   }, [scope]);
 
   const syncSales = useCallback(async () => {
-    if (offline || !navigator.onLine || syncing.current) return;
+    if (!apiMode || offline || !navigator.onLine || syncing.current) return;
     syncing.current = true;
     const targetScope = scope;
     let syncedAny = false;
@@ -154,7 +154,7 @@ function OfflineScopeRuntime({ children }: { children: React.ReactNode }) {
     } finally {
       syncing.current = false;
     }
-  }, [bootstrap.organization.id, bootstrap.user.id, currentLocation.id, offline, queryClient, refreshCatalogue, scope]);
+  }, [apiMode, bootstrap.organization.id, bootstrap.user.id, currentLocation.id, offline, queryClient, refreshCatalogue, scope]);
 
   const enqueueCashSale = useCallback(async (sale: PendingCashSale) => {
     await offlineStorage.saveSale(sale);

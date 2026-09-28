@@ -8,18 +8,18 @@ import { commerceApi, type ApiProduct, type ApiSale } from "@/lib/commerce-api";
 import {
   offlineScope,
   offlineStorage,
-  type PendingCashSale,
+  type PendingOfflineSale,
 } from "@/lib/offline-storage";
 import { PlatformApiError } from "@/lib/platform-api";
 
 interface OfflineWorkspaceValue {
   products: ApiProduct[];
   catalogueComplete: boolean;
-  pendingSales: PendingCashSale[];
+  pendingSales: PendingOfflineSale[];
   connectionOnline: boolean;
   syncedSale: { key: string; sale: ApiSale } | null;
   clearSyncedSale: () => void;
-  enqueueCashSale: (sale: PendingCashSale) => Promise<void>;
+  enqueueSale: (sale: PendingOfflineSale) => Promise<void>;
   syncSales: () => Promise<void>;
   retrySale: (id: string) => Promise<void>;
   refreshCatalogue: (force?: boolean) => Promise<void>;
@@ -40,7 +40,7 @@ function OfflineScopeRuntime({ children }: { children: React.ReactNode }) {
   const scope = offlineScope(bootstrap.organization.id, currentLocation.id);
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [catalogueComplete, setCatalogueComplete] = useState(false);
-  const [pendingSales, setPendingSales] = useState<PendingCashSale[]>([]);
+  const [pendingSales, setPendingSales] = useState<PendingOfflineSale[]>([]);
   const [connectionOnline, setConnectionOnline] = useState(true);
   const [syncedSale, setSyncedSale] = useState<{ key: string; sale: ApiSale } | null>(null);
   const syncing = useRef(false);
@@ -125,7 +125,8 @@ function OfflineScopeRuntime({ children }: { children: React.ReactNode }) {
             items: sale.items,
             customer_id: sale.customerId ?? null,
             discount: sale.discount,
-            payment_method: "cash",
+            payment_method: sale.paymentMethod ?? "cash",
+            payment_reference: sale.paymentReference ?? "",
           }, sale.id);
           syncedAny = true;
           await offlineStorage.deleteSale(targetScope, sale.id);
@@ -138,7 +139,7 @@ function OfflineScopeRuntime({ children }: { children: React.ReactNode }) {
           void queryClient.invalidateQueries({ queryKey: ["products", currentLocation.id] });
         } catch (error) {
           if (error instanceof PlatformApiError && [400, 403, 404, 409, 422].includes(error.status)) {
-            const updatedSale: PendingCashSale = {
+            const updatedSale: PendingOfflineSale = {
               ...sale, status: "needs_review", error: error.message,
             };
             await offlineStorage.saveSale(updatedSale);
@@ -156,7 +157,7 @@ function OfflineScopeRuntime({ children }: { children: React.ReactNode }) {
     }
   }, [apiMode, bootstrap.organization.id, bootstrap.user.id, currentLocation.id, offline, queryClient, refreshCatalogue, scope]);
 
-  const enqueueCashSale = useCallback(async (sale: PendingCashSale) => {
+  const enqueueSale = useCallback(async (sale: PendingOfflineSale) => {
     await offlineStorage.saveSale(sale);
     const updated = await offlineStorage.getSales(scope);
     setPendingSales(updated.filter((item) => item.userId === bootstrap.user.id));
@@ -194,7 +195,7 @@ function OfflineScopeRuntime({ children }: { children: React.ReactNode }) {
   return <Context.Provider value={{
     products, catalogueComplete, pendingSales, connectionOnline, syncedSale,
     clearSyncedSale: () => setSyncedSale(null),
-    enqueueCashSale, syncSales, retrySale, refreshCatalogue, rememberProducts,
+    enqueueSale, syncSales, retrySale, refreshCatalogue, rememberProducts,
   }}>{children}</Context.Provider>;
 }
 

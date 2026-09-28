@@ -51,14 +51,14 @@ export function PosPage() {
     catalogueComplete,
     pendingSales,
     connectionOnline,
-    enqueueCashSale,
+    enqueueSale,
     syncSales,
     retrySale,
     syncedSale,
     clearSyncedSale,
     refreshCatalogue,
   } = useOfflineWorkspace();
-  const recentCashSaleId = useRef<string | null>(null);
+  const recentQueuedSaleId = useRef<string | null>(null);
   const {
     state,
     completeSale,
@@ -78,6 +78,7 @@ export function PosPage() {
   const [customerId, setCustomerId] = useState("");
   const [discount, setDiscount] = useState(0);
   const [payment, setPayment] = useState<PaymentMethod>("Cash");
+  const [paymentReference, setPaymentReference] = useState("");
   const [cashReceived, setCashReceived] = useState(0);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [heldOpen, setHeldOpen] = useState(false);
@@ -90,11 +91,11 @@ export function PosPage() {
   }, [connectionOnline, refreshCatalogue]);
 
   useEffect(() => {
-    if (!syncedSale || recentCashSaleId.current !== syncedSale.key) return;
+    if (!syncedSale || recentQueuedSaleId.current !== syncedSale.key) return;
     const completed = mapApiSale(syncedSale.sale);
     recordCompletedSale(completed);
     setReceipt(completed);
-    recentCashSaleId.current = null;
+    recentQueuedSaleId.current = null;
     clearSyncedSale();
   }, [clearSyncedSale, recordCompletedSale, syncedSale]);
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
@@ -333,14 +334,14 @@ export function PosPage() {
   const finishSale = async () => {
     setCheckoutBusy(true);
     try {
-      if (apiMode && payment === "Cash") {
+      if (apiMode && (payment === "Cash" || !connectionOnline)) {
         if (customerId && !connectionOnline) {
-          showToast("Customer sale needs connection", "Use a walk-in cash sale offline, or reconnect before selecting a customer.", "error");
+          showToast("Customer sale needs connection", "Use a walk-in sale offline, or reconnect before selecting a customer.", "error");
           return;
         }
-        const cashSaleId = crypto.randomUUID();
-        await enqueueCashSale({
-          id: cashSaleId,
+        const queuedSaleId = crypto.randomUUID();
+        await enqueueSale({
+          id: queuedSaleId,
           organizationId: bootstrap.organization.id,
           locationId: currentLocation.id,
           userId: bootstrap.user.id,
@@ -351,19 +352,18 @@ export function PosPage() {
             expected_unit_price: productsById.get(item.productId)?.price.toFixed(2) ?? "0.00",
           })),
           customerId: customerId || null,
+          paymentMethod: payment.toLowerCase() as "cash" | "card" | "transfer",
+          paymentReference: payment === "Cash" ? "" : paymentReference.trim(),
           discount: String(discount),
           total,
           status: "pending",
         });
         clearCart();
-        recentCashSaleId.current = cashSaleId;
+        recentQueuedSaleId.current = queuedSaleId;
         setCheckoutOpen(false);
         setCashReceived(0);
-        showToast("Cash sale saved on this device", "Pending sync. A final receipt is available after the server accepts the sale.");
-        return;
-      }
-      if (apiMode && !connectionOnline) {
-        showToast("Connection required", "Card and transfer sales need an online connection.", "error");
+        setPaymentReference("");
+        showToast(`${payment} sale saved on this device`, "Pending sync. A final receipt is available after the server accepts the sale.");
         return;
       }
       let sale: Sale;
@@ -381,6 +381,7 @@ export function PosPage() {
             | "cash"
             | "card"
             | "transfer",
+          payment_reference: payment === "Cash" ? "" : paymentReference.trim(),
         });
         sale = {
           sourceId: result.id,
@@ -465,6 +466,7 @@ export function PosPage() {
       setReceipt(sale);
       clearCart();
       setCashReceived(0);
+      setPaymentReference("");
     } catch (error) {
       if (apiMode && connectionOnline) {
         void refreshCatalogue(true).catch(() => undefined);
@@ -554,7 +556,7 @@ export function PosPage() {
         <section className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4" aria-live="polite">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold">{pendingSales.length} cash sale{pendingSales.length === 1 ? "" : "s"} saved on this device</p>
+              <p className="text-sm font-semibold">{pendingSales.length} sale{pendingSales.length === 1 ? "" : "s"} saved on this device</p>
               <p className="text-xs text-[var(--muted-foreground)]">These are not final receipts until synced and accepted.</p>
             </div>
             <Button type="button" variant="secondary" disabled={!connectionOnline} onClick={() => void syncSales()}>Sync now</Button>
@@ -562,7 +564,7 @@ export function PosPage() {
           <div className="mt-3 space-y-2 text-xs">
             {pendingSales.map((sale) => (
               <div key={sale.id} className="flex flex-wrap items-center justify-between gap-2">
-                <span>{new Date(sale.createdAt).toLocaleString()} · {formatCurrency(sale.total)} · {sale.status === "needs_review" ? `Needs review: ${sale.error}` : "Pending sync"}</span>
+                <span>{new Date(sale.createdAt).toLocaleString()} · {(sale.paymentMethod ?? "cash").toUpperCase()} · {formatCurrency(sale.total)}{sale.paymentReference ? ` · Ref ${sale.paymentReference}` : ""} · {sale.status === "needs_review" ? `Needs review: ${sale.error}` : "Pending sync"}</span>
                 {sale.status === "needs_review" && <Button type="button" variant="secondary" onClick={() => void retrySale(sale.id)}>Retry</Button>}
               </div>
             ))}
@@ -572,7 +574,7 @@ export function PosPage() {
 
       {apiMode && !connectionOnline && (
         <p role="status" className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
-          Offline cash sales are saved on this device until sync. {catalogueComplete
+          Offline sales are saved on this device until sync. Confirm card and transfer payments outside Workcrest before saving. {catalogueComplete
             ? "Prices and stock are from the last saved catalogue."
             : "The full catalogue was not downloaded before this outage; only saved products are available."}
         </p>
@@ -852,8 +854,8 @@ export function PosPage() {
         open={checkoutOpen}
         onOpenChange={setCheckoutOpen}
         title="Take payment"
-        description={payment === "Cash"
-          ? "Save this cash sale on the device. It becomes final when the server accepts it."
+        description={apiMode && (payment === "Cash" || !connectionOnline)
+          ? "Save this sale on the device. It becomes final when the server accepts it."
           : "Confirm the payment method and amount before completing this sale."}
       >
         <div className="p-5">
@@ -915,6 +917,22 @@ export function PosPage() {
               </span>
             </FormField>
           )}
+          {payment !== "Cash" && (
+            <div className="mt-5 space-y-3">
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Confirm payment on your card terminal or banking app before saving. Workcrest records the payment; it does not charge or verify it.
+              </p>
+              <FormField label="Payment reference (optional)">
+                <input
+                  type="text"
+                  maxLength={100}
+                  value={paymentReference}
+                  onChange={(event) => setPaymentReference(event.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+            </div>
+          )}
         </div>
         <ModalFooter>
           <Button
@@ -931,7 +949,7 @@ export function PosPage() {
             }
           >
             <Check className="size-4" />{" "}
-            {checkoutBusy ? "Saving…" : payment === "Cash" && apiMode ? "Save cash sale" : "Complete sale"}
+            {checkoutBusy ? "Saving…" : apiMode && (payment === "Cash" || !connectionOnline) ? "Save sale" : "Complete sale"}
           </Button>
         </ModalFooter>
       </Modal>

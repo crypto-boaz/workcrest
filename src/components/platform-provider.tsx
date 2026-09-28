@@ -347,7 +347,7 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
       <main className="grid min-h-screen place-items-center bg-[var(--background)] p-6">
         <section className="space-y-3 text-center">
           <h1 className="text-lg font-semibold">This page needs a connection</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">Products and cash sales are available offline.</p>
+          <p className="text-sm text-[var(--muted-foreground)]">Products and sales paid by cash, card, or transfer are available offline.</p>
           <Button asChild><Link href="/pos">Open point of sale</Link></Button>
         </section>
       </main>

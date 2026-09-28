@@ -25,7 +25,7 @@ async function pinHash(pin: string, salt: number[]): Promise<number[]> {
   return Array.from(new Uint8Array(bits));
 }
 
-export interface PendingCashSale {
+export interface PendingOfflineSale {
   id: string;
   organizationId: string;
   locationId: string;
@@ -33,6 +33,9 @@ export interface PendingCashSale {
   createdAt: string;
   items: Array<{ product_id: string; quantity: string; expected_unit_price: string }>;
   customerId?: string | null;
+  // Optional so cash sales saved by earlier app versions remain readable.
+  paymentMethod?: "cash" | "card" | "transfer";
+  paymentReference?: string;
   discount: string;
   total: number;
   status: "pending" | "needs_review";
@@ -111,21 +114,21 @@ export const offlineStorage = {
   getCatalogue: (scope: string) => read<OfflineCatalogue>(`products:${scope}`),
   saveCatalogue: (scope: string, catalogue: OfflineCatalogue) =>
     write(`products:${scope}`, catalogue),
-  getSales: async (scope: string): Promise<PendingCashSale[]> => {
+  getSales: async (scope: string): Promise<PendingOfflineSale[]> => {
     const database = await openDatabase();
     try {
-      return await new Promise<PendingCashSale[]>((resolve, reject) => {
+      return await new Promise<PendingOfflineSale[]>((resolve, reject) => {
         const request = database.transaction(STORE, "readonly")
           .objectStore(STORE)
           .getAll(IDBKeyRange.bound(`sale:${scope}:`, `sale:${scope}:\uffff`));
-        request.onsuccess = () => resolve(request.result as PendingCashSale[]);
+        request.onsuccess = () => resolve(request.result as PendingOfflineSale[]);
         request.onerror = () => reject(request.error);
       });
     } finally {
       database.close();
     }
   },
-  saveSale: (sale: PendingCashSale) =>
+  saveSale: (sale: PendingOfflineSale) =>
     write(`sale:${offlineScope(sale.organizationId, sale.locationId)}:${sale.id}`, sale),
   deleteSale: (scope: string, id: string) => write(`sale:${scope}:${id}`),
 };

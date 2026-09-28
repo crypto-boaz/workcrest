@@ -53,11 +53,12 @@ export const commerceApi = {
     query: string,
     nextUrl: string,
     signal?: AbortSignal,
+    pageSize = 100,
   ) => {
     const path = locationPath(locationId, "products/");
     if (!nextUrl) {
       return apiRequest<ProductPage>(
-        `${path}?page_size=100&search=${encodeURIComponent(query)}`,
+        `${path}?page_size=${pageSize}&search=${encodeURIComponent(query)}`,
         { signal },
       );
     }
@@ -124,13 +125,13 @@ export const commerceApi = {
   checkout: (
     locationId: string,
     payload: {
-      items: Array<{ product_id: string; quantity: string }>;
+      items: Array<{ product_id: string; quantity: string; expected_unit_price?: string }>;
       customer_id?: string | null;
       payment_method: "cash" | "card" | "transfer";
       payment_reference?: string;
       discount?: string;
     },
-    idempotencyKey = crypto.randomUUID(),
+    idempotencyKey: string = crypto.randomUUID(),
   ) =>
     secureApiRequest<ApiSale>(locationPath(locationId, "sales/checkout/"), {
       method: "POST",

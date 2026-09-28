@@ -33,6 +33,7 @@ import {
 
 import { useBusinessStore } from "@/components/business-store-provider";
 import { usePlatform } from "@/components/platform-provider";
+import { PwaInstallCard } from "@/components/pwa-install-card";
 import { TenantLogo } from "@/components/tenant-logo";
 import { useNotifications } from "@/components/use-notifications";
 import { Button } from "@/components/ui/button";
@@ -733,6 +734,8 @@ export function SettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      <div className="mb-4"><PwaInstallCard /></div>
 
       <form onSubmit={submit} className="space-y-4">
         <Card>

@@ -167,7 +167,7 @@ def apply_stock(
     )
 
 
-@transaction.atomic
+@transaction.atomic(savepoint=False)
 def complete_sale(
     *,
     organization,
@@ -230,6 +230,13 @@ def complete_sale(
     subtotal = Decimal("0")
     for item in items:
         product = products[str(item["product_id"])]
+        expected_price = item.get("expected_unit_price")
+        if expected_price is not None and product.selling_price != _decimal(
+            expected_price, "0.01"
+        ):
+            raise ConflictError(
+                f"The price of {product.name} changed. Review the sale before trying again."
+            )
         quantity = _decimal(item["quantity"])
         if quantity <= 0:
             raise ConflictError("Sale quantities must be greater than zero.")

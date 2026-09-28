@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { ThemeProvider } from "@/components/theme-provider";
+import { PwaRegistration } from "@/components/pwa-registration";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -9,6 +10,7 @@ export const metadata: Metadata = {
     template: "%s · Business operations",
   },
   description: "A secure, modern business operations workspace.",
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({
@@ -19,7 +21,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider><PwaRegistration />{children}</ThemeProvider>
       </body>
     </html>
   );

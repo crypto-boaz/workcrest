@@ -29,20 +29,32 @@ export function SidebarContent({
   const pathname = usePathname();
   const {
     bootstrap,
+    offline,
     currentLocation,
     moduleEnabled,
     setCurrentLocation,
     signOut,
   } = usePlatform();
   const primaryNavigation: readonly NavigationItem[] = moduleEnabled("commerce")
-    ? navigation
+    ? offline ? navigation.filter((item) => ["/pos", "/products"].includes(item.href)) : navigation
     : [];
 
   const navItems = (items: readonly NavigationItem[]) =>
     items.map((item) => {
       const Icon = item.icon;
       const active = pathname === item.href;
-      const link = (
+      const link = offline ? (
+        <a key={item.href} href={item.href} onClick={onNavigate}
+          aria-current={active ? "page" : undefined}
+          className={cn(
+            "group flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--sidebar-ring)]",
+            active ? "bg-[var(--sidebar-active)] text-[var(--primary-foreground)]" : "text-[var(--sidebar-muted)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-foreground)]",
+            collapsed && "justify-center px-0",
+          )}>
+          <Icon className="size-[18px] shrink-0" strokeWidth={1.8} />
+          {!collapsed && <span className="truncate">{item.label}</span>}
+        </a>
+      ) : (
         <Link
           key={item.href}
           href={item.href}
@@ -97,7 +109,7 @@ export function SidebarContent({
         >
           {navItems(primaryNavigation)}
           <div className="my-4 border-t border-[var(--sidebar-border)]" />
-          {navItems(secondaryNavigation)}
+          {!offline && navItems(secondaryNavigation)}
         </nav>
 
         <div className="shrink-0 border-t border-[var(--sidebar-border)] p-3">

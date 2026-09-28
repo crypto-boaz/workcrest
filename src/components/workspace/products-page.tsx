@@ -11,10 +11,11 @@ import {
   Warehouse,
 } from "lucide-react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { FormEvent, useDeferredValue, useMemo, useState } from "react";
+import { FormEvent, useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import { useBusinessStore } from "@/components/business-store-provider";
 import { usePlatform } from "@/components/platform-provider";
+import { useOfflineWorkspace } from "@/components/offline-workspace-provider";
 import { Button } from "@/components/ui/button";
 import type { Product, ProductInput } from "@/lib/business-types";
 import { mapApiProduct } from "@/lib/business-api";
@@ -61,6 +62,7 @@ function formatProductSku(value: string) {
 
 export function ProductsPage() {
   const queryClient = useQueryClient();
+  const { products: cachedProducts, catalogueComplete, connectionOnline, rememberProducts } = useOfflineWorkspace();
   const { state, addProduct, updateProduct, archiveProduct } =
     useBusinessStore();
   const { bootstrap, currentLocation } = usePlatform();
@@ -80,23 +82,30 @@ export function ProductsPage() {
         deferredQuery,
         pageParam,
         signal,
+        40,
       ),
     initialPageParam: "",
     getNextPageParam: (lastPage) => lastPage.next || undefined,
-    enabled: apiMode,
+    enabled: apiMode && connectionOnline,
     staleTime: 30_000,
   });
+  useEffect(() => {
+    if (deferredQuery || !catalogQuery.data?.pages[0]?.results) return;
+    void rememberProducts(catalogQuery.data.pages[0].results).catch(() => undefined);
+  }, [catalogQuery.data, deferredQuery, rememberProducts]);
   const products = useMemo(
     () =>
       apiMode
-        ? catalogQuery.data?.pages.flatMap((page) =>
+        ? !connectionOnline
+          ? cachedProducts.map(mapApiProduct)
+          : catalogQuery.data?.pages.flatMap((page) =>
             page.results.map(mapApiProduct),
-          ) ?? []
+          ) ?? cachedProducts.map(mapApiProduct)
         : state.products,
-    [catalogQuery.data, state.products],
+    [catalogQuery.data, cachedProducts, connectionOnline, state.products],
   );
   const totalProducts = apiMode
-    ? (catalogQuery.data?.pages[0]?.count ?? 0)
+    ? (catalogQuery.data?.pages[0]?.count ?? cachedProducts.length)
     : products.length;
 
   const filtered = useMemo(
@@ -119,9 +128,9 @@ export function ProductsPage() {
             product.stock <= product.reorderLevel) ||
           (stockFilter === "healthy" && product.stock > product.reorderLevel) ||
           (stockFilter === "archived" && product.status === "archived");
-        return (apiMode || matchesQuery) && matchesStock;
+        return (apiMode && connectionOnline && catalogQuery.data ? true : matchesQuery) && matchesStock;
       }),
-    [deferredQuery, products, stockFilter],
+    [catalogQuery.data, connectionOnline, deferredQuery, products, stockFilter],
   );
 
   const inventoryValue = products.reduce(
@@ -222,12 +231,18 @@ export function ProductsPage() {
               onClick={exportProducts}
               label={apiMode ? "Export loaded CSV" : "Export CSV"}
             />
-            <Button onClick={openCreate}>
+            <Button onClick={openCreate} disabled={apiMode && !connectionOnline}>
               <Plus className="size-4" /> Add product
             </Button>
           </>
         }
       />
+
+      {apiMode && !connectionOnline && (
+        <p role="status" className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+          Offline catalogue{catalogueComplete ? "" : " (partially saved)"}. Prices and stock may have changed on other devices. Product edits need a connection.
+        </p>
+      )}
 
       <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatTile
@@ -262,7 +277,7 @@ export function ProductsPage() {
       </section>
 
       <TableShell>
-        {apiMode && catalogQuery.isPending && (
+        {apiMode && catalogQuery.isPending && !products.length && connectionOnline && (
           <p role="status" className="p-5 text-sm text-[var(--muted-foreground)]">
             Loading products…
           </p>
@@ -373,6 +388,7 @@ export function ProductsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          disabled={apiMode && !connectionOnline}
                           onClick={() => openEdit(product)}
                           aria-label={`Edit ${product.name}`}
                           className="size-8"
@@ -382,6 +398,7 @@ export function ProductsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          disabled={apiMode && !connectionOnline}
                           onClick={() => {
                             void archiveProduct(product).then((saved) => {
                               if (saved) void refreshCatalog();
@@ -400,7 +417,7 @@ export function ProductsPage() {
             </tbody>
           </table>
         </div>
-        {apiMode && catalogQuery.isError && (
+        {apiMode && catalogQuery.isError && !products.length && connectionOnline && (
           <div className="p-5 text-sm" role="alert">
             <p>Products could not be loaded.</p>
             <Button

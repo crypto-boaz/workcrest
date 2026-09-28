@@ -7,6 +7,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   createContext,
   useContext,
@@ -17,6 +18,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { mockBootstrap, mockManifest } from "@/lib/mock-platform";
+import { offlineStorage } from "@/lib/offline-storage";
 import { apiMode, platformApi } from "@/lib/platform-api";
 import type {
   CompanySettingsResponse,
@@ -28,6 +30,7 @@ import { configureFormatting } from "@/lib/utils";
 
 interface PlatformContextValue {
   apiMode: boolean;
+  offline: boolean;
   ready: boolean;
   manifest: TenantManifest;
   bootstrap: TenantBootstrap;
@@ -59,18 +62,45 @@ function brandForeground(hex: string) {
 }
 
 function PlatformRuntime({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const queryClient = useQueryClient();
+  const [offline, setOffline] = useState(false);
+  const [offlineUnlocked, setOfflineUnlocked] = useState(false);
+  const [offlinePin, setOfflinePin] = useState("");
+  const [offlinePinError, setOfflinePinError] = useState("");
   const manifestQuery = useQuery({
     queryKey: ["tenant-manifest"],
-    queryFn: () =>
-      apiMode ? platformApi.manifest() : Promise.resolve(mockManifest),
+    queryFn: async () => {
+      if (!apiMode) return mockManifest;
+      try {
+        return await platformApi.manifest();
+      } catch (error) {
+        if (navigator.onLine && !(error instanceof TypeError)) throw error;
+        const cached = await offlineStorage.getIdentity();
+        const pin = await offlineStorage.getPin();
+        if (!cached || !pin) throw error;
+        setOffline(true);
+        return cached.manifest;
+      }
+    },
     staleTime: 5 * 60_000,
     retry: 1,
   });
   const bootstrapQuery = useQuery({
     queryKey: ["tenant-bootstrap"],
-    queryFn: () =>
-      apiMode ? platformApi.bootstrap() : Promise.resolve(mockBootstrap),
+    queryFn: async () => {
+      if (!apiMode) return mockBootstrap;
+      try {
+        return await platformApi.bootstrap();
+      } catch (error) {
+        if (navigator.onLine && !(error instanceof TypeError)) throw error;
+        const cached = await offlineStorage.getIdentity();
+        const pin = await offlineStorage.getPin();
+        if (!cached || !pin) throw error;
+        setOffline(true);
+        return cached.bootstrap;
+      }
+    },
     staleTime: 60_000,
     retry: false,
   });
@@ -78,6 +108,30 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
   const bootstrap = bootstrapQuery.data ?? mockBootstrap;
   const ready =
     !apiMode || Boolean(manifestQuery.data && bootstrapQuery.data);
+  useEffect(() => {
+    if (!apiMode || !manifestQuery.data || !bootstrapQuery.data || offline) return;
+    if (bootstrapQuery.data.support_session) return;
+    if (manifestQuery.data.organization.slug !== bootstrapQuery.data.organization.slug) return;
+    void offlineStorage.saveIdentity({
+      manifest: manifestQuery.data,
+      bootstrap: bootstrapQuery.data,
+      savedAt: new Date().toISOString(),
+    }).catch(() => undefined);
+  }, [bootstrapQuery.data, manifestQuery.data, offline]);
+
+  useEffect(() => {
+    const onOnline = () => {
+      void Promise.all([platformApi.manifest(), platformApi.bootstrap()])
+        .then(([nextManifest, nextBootstrap]) => {
+          queryClient.setQueryData(["tenant-manifest"], nextManifest);
+          queryClient.setQueryData(["tenant-bootstrap"], nextBootstrap);
+          setOffline(false);
+          setOfflineUnlocked(false);
+        }).catch(() => undefined);
+    };
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [queryClient]);
   const locationStorageKey = `saas.location.${bootstrap.organization.id}.${bootstrap.user.id}`;
   const [locationId, setLocationId] = useState(
     bootstrap.locations.find((location) => location.is_primary)?.id ??
@@ -157,6 +211,7 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
   const value = useMemo<PlatformContextValue>(
     () => ({
       apiMode,
+      offline,
       ready,
       manifest,
       bootstrap,
@@ -211,6 +266,8 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
         try {
           if (apiMode) await platformApi.logout();
         } finally {
+          await offlineStorage.clearIdentity();
+          await offlineStorage.clearPin();
           queryClient.clear();
           window.location.assign("/auth/login");
         }
@@ -221,6 +278,7 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
       currentLocation,
       locationStorageKey,
       manifest,
+      offline,
       queryClient,
       ready,
     ],
@@ -256,6 +314,45 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
           />
           Loading your workspace…
         </div>
+      </main>
+    );
+  }
+
+  if (apiMode && offline && !offlineUnlocked) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[var(--background)] p-6">
+        <form className="w-full max-w-sm space-y-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void offlineStorage.verifyPin(offlinePin).then((valid) => {
+              if (valid) {
+                setOfflineUnlocked(true);
+                setOfflinePin("");
+                setOfflinePinError("");
+              } else setOfflinePinError("Incorrect offline PIN.");
+            }).catch(() => setOfflinePinError("Offline storage could not be unlocked on this device."));
+          }}>
+          <h1 className="text-lg font-semibold">Unlock offline workspace</h1>
+          <p className="text-sm text-[var(--muted-foreground)]">Enter the PIN set on this device. Sales remain pending until the server accepts them.</p>
+          <input type="password" autoComplete="off" inputMode="numeric" value={offlinePin}
+            onChange={(event) => setOfflinePin(event.target.value)}
+            aria-label="Offline PIN"
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] p-3" />
+          {offlinePinError && <p role="alert" className="text-sm text-red-600">{offlinePinError}</p>}
+          <Button type="submit">Unlock</Button>
+        </form>
+      </main>
+    );
+  }
+
+  if (apiMode && offline && !["/pos", "/products"].includes(pathname)) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[var(--background)] p-6">
+        <section className="space-y-3 text-center">
+          <h1 className="text-lg font-semibold">This page needs a connection</h1>
+          <p className="text-sm text-[var(--muted-foreground)]">Products and cash sales are available offline.</p>
+          <Button asChild><Link href="/pos">Open point of sale</Link></Button>
+        </section>
       </main>
     );
   }

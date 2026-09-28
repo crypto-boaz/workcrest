@@ -98,7 +98,7 @@ function resourcesForPath(pathname: string): BusinessResource[] {
     case "products":
       return [];
     case "pos":
-      return ["products"];
+      return [];
     case "sales":
       return [];
     case "returns":
@@ -218,7 +218,7 @@ export function BusinessStoreProvider({
   );
 
   const refreshBusinessState = useCallback(async () => {
-    if (!apiMode || !platform?.ready) return;
+    if (!apiMode || !platform?.ready || platform.offline) return;
     const resources = resourcesForPath(pathname);
     const nextState = await loadBusinessState(
       platform.currentLocation.id,
@@ -238,7 +238,7 @@ export function BusinessStoreProvider({
       loadedResourcesRef.current = new Set();
       setState(emptyBusinessState(platform));
     }
-    const resources = resourcesForPath(pathname).filter(
+    const resources = (platform.offline ? [] : resourcesForPath(pathname)).filter(
       (resource) => !loadedResourcesRef.current.has(resource),
     );
     if (!resources.length) {

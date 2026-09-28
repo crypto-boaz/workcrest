@@ -17,11 +17,12 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
 import { useBusinessStore } from "@/components/business-store-provider";
 import { usePlatform } from "@/components/platform-provider";
+import { useOfflineWorkspace } from "@/components/offline-workspace-provider";
 import { TenantLogo } from "@/components/tenant-logo";
 import { Button } from "@/components/ui/button";
 import type {
@@ -30,7 +31,7 @@ import type {
   Product,
   Sale,
 } from "@/lib/business-types";
-import { mapApiProduct } from "@/lib/business-api";
+import { mapApiProduct, mapApiSale } from "@/lib/business-api";
 import { commerceApi, type ApiProduct } from "@/lib/commerce-api";
 import { apiMode } from "@/lib/platform-api";
 import { cn, formatCurrency, formatDate, formatTime } from "@/lib/utils";
@@ -45,6 +46,19 @@ import {
 
 export function PosPage() {
   const queryClient = useQueryClient();
+  const {
+    products: cachedProducts,
+    catalogueComplete,
+    pendingSales,
+    connectionOnline,
+    enqueueCashSale,
+    syncSales,
+    retrySale,
+    syncedSale,
+    clearSyncedSale,
+    refreshCatalogue,
+  } = useOfflineWorkspace();
+  const recentCashSaleId = useRef<string | null>(null);
   const {
     state,
     completeSale,
@@ -70,6 +84,19 @@ export function PosPage() {
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [cartProductCache, setCartProductCache] = useState<Record<string, Product>>({});
+
+  useEffect(() => {
+    if (connectionOnline) void refreshCatalogue().catch(() => undefined);
+  }, [connectionOnline, refreshCatalogue]);
+
+  useEffect(() => {
+    if (!syncedSale || recentCashSaleId.current !== syncedSale.key) return;
+    const completed = mapApiSale(syncedSale.sale);
+    recordCompletedSale(completed);
+    setReceipt(completed);
+    recentCashSaleId.current = null;
+    clearSyncedSale();
+  }, [clearSyncedSale, recordCompletedSale, syncedSale]);
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
   const productQueryKey = ["products", currentLocation.id, "pos"];
@@ -89,7 +116,7 @@ export function PosPage() {
     queryKey: ["products", currentLocation.id, "pos-search", deferredQuery],
     queryFn: ({ signal }) =>
       commerceApi.products(currentLocation.id, deferredQuery, signal),
-    enabled: apiMode && ready && Boolean(deferredQuery),
+    enabled: apiMode && ready && connectionOnline && Boolean(deferredQuery),
     staleTime: 30_000,
     gcTime: 5 * 60_000,
   });
@@ -97,7 +124,7 @@ export function PosPage() {
     queryKey: ["customers", currentLocation.id, "pos"],
     queryFn: ({ signal }) =>
       commerceApi.customers(currentLocation.id, signal),
-    enabled: apiMode && ready,
+    enabled: apiMode && ready && connectionOnline,
     staleTime: 60_000,
     gcTime: 10 * 60_000,
     retry: false,
@@ -107,7 +134,7 @@ export function PosPage() {
     queryKey: ["held-carts", currentLocation.id],
     queryFn: ({ signal }) =>
       commerceApi.heldCarts(currentLocation.id, signal),
-    enabled: apiMode && ready,
+    enabled: apiMode && ready && connectionOnline,
     staleTime: 30_000,
     gcTime: 10 * 60_000,
     placeholderData: (previous) => previous,
@@ -115,26 +142,42 @@ export function PosPage() {
   const availableProducts: Product[] = useMemo(
     () =>
       apiMode
-        ? deferredQuery
-          ? searchProductsQuery.data?.results?.map(mapApiProduct) ?? []
-          : apiProductsQuery.data?.results?.map(mapApiProduct) ?? state.products
+        ? deferredQuery && connectionOnline && searchProductsQuery.data
+          ? searchProductsQuery.data.results.map(mapApiProduct)
+          : cachedProducts.length
+            ? cachedProducts.map(mapApiProduct)
+            : apiProductsQuery.data?.results?.map(mapApiProduct) ?? state.products
         : state.products,
     [
       apiProductsQuery.data?.results,
+      cachedProducts,
+      connectionOnline,
       deferredQuery,
-      searchProductsQuery.data?.results,
+      searchProductsQuery.data,
       state.products,
     ],
   );
   const productsById = useMemo(
     () =>
       new Map(
-        [...state.products, ...availableProducts, ...Object.values(cartProductCache)].map(
+        [...state.products, ...Object.values(cartProductCache), ...availableProducts].map(
           (product) => [product.id, product],
         ),
       ),
     [availableProducts, cartProductCache, state.products],
   );
+  const reservedStock = useMemo(() => {
+    const reserved = new Map<string, number>();
+    for (const sale of pendingSales) {
+      for (const item of sale.items) {
+        reserved.set(item.product_id,
+          (reserved.get(item.product_id) ?? 0) + Number(item.quantity));
+      }
+    }
+    return reserved;
+  }, [pendingSales]);
+  const availableStock = (product: Product) =>
+    Math.max(0, product.stock - (reservedStock.get(product.id) ?? 0));
   const availableCustomers = useMemo(
     () =>
       apiMode
@@ -201,15 +244,15 @@ export function PosPage() {
   const addToCart = (productId: string) => {
     const product = productsById.get(productId);
     if (!product) return;
-    if (product.stock < 1) return;
+    if (availableStock(product) < 1) return;
     setCartProductCache((current) => ({ ...current, [productId]: product }));
     setCart((current) => {
       const line = current.find((entry) => entry.productId === productId);
       if (line) {
-        if (line.quantity >= product.stock) {
+        if (line.quantity >= availableStock(product)) {
           showToast(
             "Stock limit reached",
-            `Only ${product.stock} units are available.`,
+            `Only ${availableStock(product)} units are available on this device.`,
             "error",
           );
           return current;
@@ -233,10 +276,10 @@ export function PosPage() {
       );
       return;
     }
-    if (quantity > product.stock) {
+    if (quantity > availableStock(product)) {
       showToast(
         "Stock limit reached",
-        `Only ${product.stock} units are available.`,
+        `Only ${availableStock(product)} units are available on this device.`,
         "error",
       );
       return;
@@ -290,6 +333,39 @@ export function PosPage() {
   const finishSale = async () => {
     setCheckoutBusy(true);
     try {
+      if (apiMode && payment === "Cash") {
+        if (customerId && !connectionOnline) {
+          showToast("Customer sale needs connection", "Use a walk-in cash sale offline, or reconnect before selecting a customer.", "error");
+          return;
+        }
+        const cashSaleId = crypto.randomUUID();
+        await enqueueCashSale({
+          id: cashSaleId,
+          organizationId: bootstrap.organization.id,
+          locationId: currentLocation.id,
+          userId: bootstrap.user.id,
+          createdAt: new Date().toISOString(),
+          items: cart.map((item) => ({
+            product_id: item.productId,
+            quantity: String(item.quantity),
+            expected_unit_price: productsById.get(item.productId)?.price.toFixed(2) ?? "0.00",
+          })),
+          customerId: customerId || null,
+          discount: String(discount),
+          total,
+          status: "pending",
+        });
+        clearCart();
+        recentCashSaleId.current = cashSaleId;
+        setCheckoutOpen(false);
+        setCashReceived(0);
+        showToast("Cash sale saved on this device", "Pending sync. A final receipt is available after the server accepts the sale.");
+        return;
+      }
+      if (apiMode && !connectionOnline) {
+        showToast("Connection required", "Card and transfer sales need an online connection.", "error");
+        return;
+      }
       let sale: Sale;
       if (apiMode) {
         const soldItems = [...cart];
@@ -297,6 +373,7 @@ export function PosPage() {
           items: cart.map((item) => ({
             product_id: item.productId,
             quantity: String(item.quantity),
+            expected_unit_price: productsById.get(item.productId)?.price.toFixed(2) ?? "0.00",
           })),
           customer_id: customerId || null,
           discount: String(discount),
@@ -389,6 +466,10 @@ export function PosPage() {
       clearCart();
       setCashReceived(0);
     } catch (error) {
+      if (apiMode && connectionOnline) {
+        void refreshCatalogue(true).catch(() => undefined);
+        void queryClient.invalidateQueries({ queryKey: ["products", currentLocation.id, "pos-search"] });
+      }
       showToast(
         "Checkout could not complete",
         error instanceof Error ? error.message : "Check the cart and try again.",
@@ -457,7 +538,7 @@ export function PosPage() {
         title="Point of sale"
         description="A fast, keyboard-friendly checkout with live stock validation and consistent records."
         actions={
-          <Button variant="secondary" onClick={() => setHeldOpen(true)}>
+          <Button variant="secondary" disabled={apiMode && !connectionOnline} onClick={() => setHeldOpen(true)}>
             <CirclePause className="size-4" />
             Held sales
             {availableHeldSales.length > 0 && (
@@ -468,6 +549,39 @@ export function PosPage() {
           </Button>
         }
       />
+
+      {apiMode && pendingSales.length > 0 && (
+        <section className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4" aria-live="polite">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">{pendingSales.length} cash sale{pendingSales.length === 1 ? "" : "s"} saved on this device</p>
+              <p className="text-xs text-[var(--muted-foreground)]">These are not final receipts until synced and accepted.</p>
+            </div>
+            <Button type="button" variant="secondary" disabled={!connectionOnline} onClick={() => void syncSales()}>Sync now</Button>
+          </div>
+          <div className="mt-3 space-y-2 text-xs">
+            {pendingSales.map((sale) => (
+              <div key={sale.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>{new Date(sale.createdAt).toLocaleString()} · {formatCurrency(sale.total)} · {sale.status === "needs_review" ? `Needs review: ${sale.error}` : "Pending sync"}</span>
+                {sale.status === "needs_review" && <Button type="button" variant="secondary" onClick={() => void retrySale(sale.id)}>Retry</Button>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {apiMode && !connectionOnline && (
+        <p role="status" className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+          Offline cash sales are saved on this device until sync. {catalogueComplete
+            ? "Prices and stock are from the last saved catalogue."
+            : "The full catalogue was not downloaded before this outage; only saved products are available."}
+        </p>
+      )}
+      {apiMode && connectionOnline && !catalogueComplete && (
+        <p role="status" className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--muted-foreground)]">
+          Preparing the product catalogue for offline use. Keep this page open until it finishes.
+        </p>
+      )}
 
       <div className="grid min-h-[calc(100vh-190px)] gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
         <section className="min-w-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
@@ -503,11 +617,11 @@ export function PosPage() {
             </div>
           </div>
 
-          {apiMode && deferredQuery && searchProductsQuery.isPending ? (
+          {apiMode && deferredQuery && connectionOnline && searchProductsQuery.isPending && !availableProducts.length ? (
             <div role="status" className="p-6 text-sm text-[var(--muted-foreground)]">
               Searching products…
             </div>
-          ) : apiMode && deferredQuery && searchProductsQuery.isError ? (
+          ) : apiMode && deferredQuery && connectionOnline && searchProductsQuery.isError && !availableProducts.length ? (
             <div role="alert" className="p-6 text-sm">
               <p>Product search failed.</p>
               <Button
@@ -524,7 +638,7 @@ export function PosPage() {
                 <button
                   key={product.id}
                   type="button"
-                  disabled={product.stock === 0}
+                  disabled={availableStock(product) === 0}
                   onClick={() => addToCart(product.id)}
                   className="group min-h-36 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-left outline-none transition hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:shadow-md focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-45"
                 >
@@ -535,9 +649,9 @@ export function PosPage() {
                     {product.name}
                   </p>
                   <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">
-                    {product.stock === 0
+                    {availableStock(product) === 0
                       ? "Out of stock"
-                      : `${product.stock} in stock`}
+                      : `${availableStock(product)} available`}
                   </p>
                   <p className="mt-2 text-sm font-bold">
                     {formatCurrency(product.price)}
@@ -714,7 +828,7 @@ export function PosPage() {
               <Button
                 variant="secondary"
                 size="icon"
-                disabled={!cart.length}
+                disabled={!cart.length || (apiMode && !connectionOnline)}
                 onClick={holdCurrentSale}
                 aria-label="Hold current sale"
               >
@@ -738,7 +852,9 @@ export function PosPage() {
         open={checkoutOpen}
         onOpenChange={setCheckoutOpen}
         title="Take payment"
-        description="Confirm the payment method and amount before completing this sale."
+        description={payment === "Cash"
+          ? "Save this cash sale on the device. It becomes final when the server accepts it."
+          : "Confirm the payment method and amount before completing this sale."}
       >
         <div className="p-5">
           <div className="rounded-xl bg-[var(--primary-soft)] p-4 text-center">
@@ -815,7 +931,7 @@ export function PosPage() {
             }
           >
             <Check className="size-4" />{" "}
-            {checkoutBusy ? "Completing…" : "Complete sale"}
+            {checkoutBusy ? "Saving…" : payment === "Cash" && apiMode ? "Save cash sale" : "Complete sale"}
           </Button>
         </ModalFooter>
       </Modal>

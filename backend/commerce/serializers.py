@@ -370,6 +370,9 @@ class CheckoutItemSerializer(serializers.Serializer):
     quantity = serializers.DecimalField(
         max_digits=18, decimal_places=3, min_value=Decimal("0.001")
     )
+    expected_unit_price = serializers.DecimalField(
+        max_digits=18, decimal_places=2, min_value=Decimal("0"), required=False
+    )
 
 
 class CheckoutSerializer(serializers.Serializer):

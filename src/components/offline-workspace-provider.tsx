@@ -128,6 +128,7 @@ function OfflineScopeRuntime({ children }: { children: React.ReactNode }) {
             payment_method: sale.paymentMethod ?? "cash",
             payment_reference: sale.paymentReference ?? "",
           }, sale.id);
+          await offlineStorage.rememberSales(targetScope, bootstrap.user.id, [completed]);
           syncedAny = true;
           await offlineStorage.deleteSale(targetScope, sale.id);
           const remaining = await offlineStorage.getSales(targetScope);
@@ -191,6 +192,20 @@ function OfflineScopeRuntime({ children }: { children: React.ReactNode }) {
     const interval = window.setInterval(() => { void syncSales(); }, 20_000);
     return () => window.clearInterval(interval);
   }, [connectionOnline, syncSales]);
+
+  useEffect(() => {
+    if (!apiMode || offline || !connectionOnline || !navigator.onLine) return;
+    const timer = window.setTimeout(() => {
+      void offlineStorage.getSalesSnapshot(scope, bootstrap.user.id)
+        .then((snapshot) => {
+          if (snapshot && Date.now() - Date.parse(snapshot.savedAt) < 5 * 60_000) return;
+          return commerceApi.salesPage(currentLocation.id, "", "")
+            .then((page) => offlineStorage.rememberSales(scope, bootstrap.user.id, page.results));
+        })
+        .catch(() => undefined);
+    }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [apiMode, bootstrap.user.id, connectionOnline, currentLocation.id, offline, scope]);
 
   return <Context.Provider value={{
     products, catalogueComplete, pendingSales, connectionOnline, syncedSale,

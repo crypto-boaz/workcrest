@@ -16,11 +16,13 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { FormEvent, useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import { useBusinessStore } from "@/components/business-store-provider";
+import { useOfflineWorkspace } from "@/components/offline-workspace-provider";
 import { usePlatform } from "@/components/platform-provider";
 import { Button } from "@/components/ui/button";
 import type { Customer, CustomerInput, Sale } from "@/lib/business-types";
 import { mapApiSale } from "@/lib/business-api";
-import { commerceApi } from "@/lib/commerce-api";
+import { commerceApi, type ApiSale } from "@/lib/commerce-api";
+import { offlineScope, offlineStorage, type OfflineSalesSnapshot } from "@/lib/offline-storage";
 import { apiMode } from "@/lib/platform-api";
 import { formatCurrency, formatDate, formatTime } from "@/lib/utils";
 import {
@@ -41,13 +43,20 @@ import {
 
 export function SalesPage() {
   const { state } = useBusinessStore();
-  const { bootstrap, currentLocation } = usePlatform();
+  const { bootstrap, currentLocation, offline } = usePlatform();
+  const { connectionOnline, pendingSales } = useOfflineWorkspace();
+  const scope = offlineScope(bootstrap.organization.id, currentLocation.id);
+  const snapshotKey = `${scope}:${bootstrap.user.id}`;
+  const [cachedSnapshot, setCachedSnapshot] = useState<{
+    key: string;
+    value: OfflineSalesSnapshot;
+  } | null>(null);
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query.trim());
   const [payment, setPayment] = useState("all");
   const [selected, setSelected] = useState<Sale | null>(null);
   const salesQuery = useInfiniteQuery({
-    queryKey: ["sales-history", currentLocation.id, deferredQuery],
+    queryKey: ["sales-history", currentLocation.id, bootstrap.user.id, deferredQuery],
     queryFn: ({ pageParam, signal }) =>
       commerceApi.salesPage(
         currentLocation.id,
@@ -57,15 +66,46 @@ export function SalesPage() {
       ),
     initialPageParam: "",
     getNextPageParam: (lastPage) => lastPage.next || undefined,
-    enabled: apiMode,
+    enabled: apiMode && connectionOnline && !offline,
     staleTime: 30_000,
   });
+  useEffect(() => {
+    let active = true;
+    void offlineStorage.getSalesSnapshot(scope, bootstrap.user.id)
+      .then((value) => {
+        if (active && value) setCachedSnapshot({ key: snapshotKey, value });
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [bootstrap.user.id, scope, snapshotKey]);
+
+  useEffect(() => {
+    if (!apiMode || !salesQuery.data || offline) return;
+    const loaded = salesQuery.data.pages.flatMap((page) => page.results);
+    if (!loaded.length) return;
+    let active = true;
+    void offlineStorage.rememberSales(scope, bootstrap.user.id, loaded)
+      .then(() => offlineStorage.getSalesSnapshot(scope, bootstrap.user.id))
+      .then((value) => {
+        if (active && value) setCachedSnapshot({ key: snapshotKey, value });
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [bootstrap.user.id, offline, salesQuery.data, scope, snapshotKey]);
+
   const sales = useMemo(
-    () =>
-      apiMode
-        ? salesQuery.data?.pages.flatMap((page) => page.results.map(mapApiSale)) ?? []
-        : state.sales,
-    [salesQuery.data, state.sales],
+    () => {
+      if (!apiMode) return state.sales;
+      const loaded: ApiSale[] = salesQuery.data?.pages.flatMap((page) => page.results) ?? [];
+      const merged = new Map<string, ApiSale>();
+      const cached = cachedSnapshot?.key === snapshotKey ? cachedSnapshot.value.sales : [];
+      for (const sale of cached) merged.set(sale.id, sale);
+      for (const sale of loaded) merged.set(sale.id, sale);
+      return [...merged.values()]
+        .sort((a, b) => Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""))
+        .map(mapApiSale);
+    },
+    [cachedSnapshot, salesQuery.data, snapshotKey, state.sales],
   );
 
   useEffect(() => {
@@ -81,14 +121,14 @@ export function SalesPage() {
       const timer = window.setTimeout(() => setSelected(match), 0);
       return () => window.clearTimeout(timer);
     }
-    if (!apiMode) return;
+    if (!apiMode || !connectionOnline || offline) return;
     const controller = new AbortController();
     void commerceApi
       .saleByReceiptQr(currentLocation.id, receipt, controller.signal)
       .then((sale) => setSelected(mapApiSale(sale)))
       .catch(() => undefined);
     return () => controller.abort();
-  }, [currentLocation.id, sales]);
+  }, [connectionOnline, currentLocation.id, offline, sales]);
 
   const filtered = useMemo(
     () =>
@@ -141,7 +181,9 @@ export function SalesPage() {
       <PageHeader
         eyebrow="Revenue"
         title="Sales"
-        description="Review every completed checkout, payment method, and item-level transaction detail."
+        description={connectionOnline
+          ? "Review completed checkouts, payment methods, and item-level transaction detail."
+          : "Showing sales saved on this device. New sales remain pending until they sync."}
         actions={
           <ExportButton
             onClick={exportSales}
@@ -149,6 +191,25 @@ export function SalesPage() {
           />
         }
       />
+      {apiMode && pendingSales.length > 0 && (
+        <section className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+          <p className="text-sm font-semibold">{pendingSales.length} sale{pendingSales.length === 1 ? "" : "s"} awaiting sync</p>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">These sales are saved on this device and are not final receipts yet.</p>
+          <div className="mt-3 space-y-2 text-xs">
+            {pendingSales.map((sale) => (
+              <div key={sale.id} className="flex flex-wrap justify-between gap-2 border-t border-amber-500/20 pt-2">
+                <span>{new Date(sale.createdAt).toLocaleString()} · {(sale.paymentMethod ?? "cash").toUpperCase()}</span>
+                <span>{formatCurrency(sale.total)} · {sale.status === "needs_review" ? "Needs review in Point of sale" : "Pending sync"}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {apiMode && !connectionOnline && cachedSnapshot?.key === snapshotKey && (
+        <p role="status" className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--muted-foreground)]">
+          Up to 1,000 recently loaded completed sales were last saved on {new Date(cachedSnapshot.value.savedAt).toLocaleString()}.
+        </p>
+      )}
       <section className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatTile
           label={apiMode ? "Loaded today's revenue" : "Today’s revenue"}
@@ -180,9 +241,14 @@ export function SalesPage() {
       </section>
 
       <TableShell>
-        {apiMode && salesQuery.isPending && (
+        {apiMode && connectionOnline && salesQuery.isPending && sales.length === 0 && (
           <p role="status" className="p-5 text-sm text-[var(--muted-foreground)]">
             Loading sales…
+          </p>
+        )}
+        {apiMode && !connectionOnline && sales.length === 0 && (
+          <p role="status" className="p-5 text-sm text-[var(--muted-foreground)]">
+            No completed sales were saved on this device yet. Open Sales while online to download its history.
           </p>
         )}
         <Toolbar
@@ -270,7 +336,7 @@ export function SalesPage() {
             </tbody>
           </table>
         </div>
-        {apiMode && salesQuery.isError && (
+        {apiMode && connectionOnline && salesQuery.isError && (
           <div className="p-5 text-sm" role="alert">
             <p>Sales could not be loaded.</p>
             <Button
@@ -282,7 +348,7 @@ export function SalesPage() {
             </Button>
           </div>
         )}
-        {apiMode && salesQuery.hasNextPage && (
+        {apiMode && connectionOnline && salesQuery.hasNextPage && (
           <div className="flex justify-center border-t border-[var(--border)] p-4">
             <Button
               variant="secondary"

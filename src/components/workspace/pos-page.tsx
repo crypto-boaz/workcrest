@@ -33,6 +33,7 @@ import type {
 } from "@/lib/business-types";
 import { mapApiProduct, mapApiSale } from "@/lib/business-api";
 import { commerceApi, type ApiProduct } from "@/lib/commerce-api";
+import { offlineScope, offlineStorage } from "@/lib/offline-storage";
 import { apiMode } from "@/lib/platform-api";
 import { cn, formatCurrency, formatDate, formatTime } from "@/lib/utils";
 import {
@@ -383,6 +384,11 @@ export function PosPage() {
             | "transfer",
           payment_reference: payment === "Cash" ? "" : paymentReference.trim(),
         });
+        await offlineStorage.rememberSales(
+          offlineScope(bootstrap.organization.id, currentLocation.id),
+          bootstrap.user.id,
+          [result],
+        ).catch(() => undefined);
         sale = {
           sourceId: result.id,
           id: result.number ?? result.id ?? "",

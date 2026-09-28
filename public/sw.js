@@ -1,11 +1,11 @@
-const CACHE = "workcrest-shell-v2";
-const PAGES = new Set(["/pos", "/products", "/settings"]);
+const CACHE = "workcrest-shell-v3";
+const PAGES = new Set(["/pos", "/products", "/sales", "/settings"]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE).then((cache) => cache.addAll([
       "/workcrest-rising-crest-192.png", "/workcrest-rising-crest-512.png", "/manifest.webmanifest",
-      "/pos", "/products",
+      "/pos", "/products", "/sales",
     ])),
   );
   self.skipWaiting();

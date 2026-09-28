@@ -40,6 +40,7 @@ export function AppHeader({
   const { notifications, unread, markRead } = useNotifications();
   const {
     bootstrap,
+    offline,
     currentLocation,
     setCurrentLocation,
     signOut,
@@ -245,12 +246,12 @@ export function AppHeader({
                 <CircleHelp className="size-4" /> Help center
               </DropdownMenu.Item>
               <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
-              <DropdownMenu.Item
+              {!offline && <DropdownMenu.Item
                 className={`${menuItem} text-red-500`}
                 onSelect={() => void signOut()}
               >
                 <LogOut className="size-4" /> Sign out
-              </DropdownMenu.Item>
+              </DropdownMenu.Item>}
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>

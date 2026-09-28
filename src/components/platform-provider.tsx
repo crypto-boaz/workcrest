@@ -66,6 +66,7 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [offline, setOffline] = useState(false);
   const [offlineUnlocked, setOfflineUnlocked] = useState(false);
+  const [offlineProblem, setOfflineProblem] = useState<"missing_identity" | "missing_pin" | null>(null);
   const [offlinePin, setOfflinePin] = useState("");
   const [offlinePinError, setOfflinePinError] = useState("");
   const manifestQuery = useQuery({
@@ -78,13 +79,15 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
         if (navigator.onLine && !(error instanceof TypeError)) throw error;
         const cached = await offlineStorage.getIdentity();
         const pin = await offlineStorage.getPin();
-        if (!cached || !pin) throw error;
         setOffline(true);
+        setOfflineProblem(!cached ? "missing_identity" : !pin ? "missing_pin" : null);
+        if (!cached || !pin) throw error;
         return cached.manifest;
       }
     },
     staleTime: 5 * 60_000,
     retry: 1,
+    networkMode: "always",
   });
   const bootstrapQuery = useQuery({
     queryKey: ["tenant-bootstrap"],
@@ -96,13 +99,15 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
         if (navigator.onLine && !(error instanceof TypeError)) throw error;
         const cached = await offlineStorage.getIdentity();
         const pin = await offlineStorage.getPin();
-        if (!cached || !pin) throw error;
         setOffline(true);
+        setOfflineProblem(!cached ? "missing_identity" : !pin ? "missing_pin" : null);
+        if (!cached || !pin) throw error;
         return cached.bootstrap;
       }
     },
     staleTime: 60_000,
     retry: false,
+    networkMode: "always",
   });
   const manifest = manifestQuery.data ?? mockManifest;
   const bootstrap = bootstrapQuery.data ?? mockBootstrap;
@@ -120,6 +125,16 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
   }, [bootstrapQuery.data, manifestQuery.data, offline]);
 
   useEffect(() => {
+    const onOffline = () => {
+      if (!apiMode || !manifestQuery.data || !bootstrapQuery.data) return;
+      setOffline(true);
+      setOfflineUnlocked(false);
+      void Promise.all([offlineStorage.getIdentity(), offlineStorage.getPin()])
+        .then(([identity, pin]) => {
+          setOfflineProblem(!identity ? "missing_identity" : !pin ? "missing_pin" : null);
+        })
+        .catch(() => setOfflineProblem("missing_identity"));
+    };
     const onOnline = () => {
       void Promise.all([platformApi.manifest(), platformApi.bootstrap()])
         .then(([nextManifest, nextBootstrap]) => {
@@ -127,11 +142,16 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
           queryClient.setQueryData(["tenant-bootstrap"], nextBootstrap);
           setOffline(false);
           setOfflineUnlocked(false);
+          setOfflineProblem(null);
         }).catch(() => undefined);
     };
+    window.addEventListener("offline", onOffline);
     window.addEventListener("online", onOnline);
-    return () => window.removeEventListener("online", onOnline);
-  }, [queryClient]);
+    return () => {
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [bootstrapQuery.data, manifestQuery.data, queryClient]);
   const locationStorageKey = `saas.location.${bootstrap.organization.id}.${bootstrap.user.id}`;
   const [locationId, setLocationId] = useState(
     bootstrap.locations.find((location) => location.is_primary)?.id ??
@@ -260,14 +280,19 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
         );
       },
       signOut: async () => {
-        try {
-          if (apiMode) await platformApi.logout();
-        } finally {
-          await offlineStorage.clearIdentity();
-          await offlineStorage.clearPin();
-          queryClient.clear();
-          window.location.assign("/auth/login");
+        if (apiMode && (offline || !navigator.onLine)) return;
+        if (apiMode) {
+          try {
+            await platformApi.logout();
+          } catch {
+            window.alert("Could not sign out. Reconnect and try again; offline sales are still saved on this device.");
+            return;
+          }
         }
+        await offlineStorage.clearIdentity();
+        await offlineStorage.clearPin();
+        queryClient.clear();
+        window.location.assign("/auth/login");
       },
     }),
     [
@@ -285,13 +310,15 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--background)] p-6">
         <section className="w-full max-w-md rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 text-center shadow-sm">
-          <h1 className="text-lg font-semibold">Workspace access required</h1>
+          <h1 className="text-lg font-semibold">{offline ? "Offline access is not ready" : "Workspace access required"}</h1>
           <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-            Sign in with an active account for this company.
+            {offlineProblem === "missing_pin"
+              ? "This device has no offline PIN. Reconnect, sign in, and set one in Settings before going offline."
+              : offlineProblem === "missing_identity"
+                ? "No workspace was saved on this device. Reconnect and sign in once to prepare offline access."
+                : "Sign in with an active account for this company."}
           </p>
-          <Button asChild className="mt-5">
-            <Link href="/auth/login">Sign in</Link>
-          </Button>
+          {!offline && <Button asChild className="mt-5"><Link href="/auth/login">Sign in</Link></Button>}
         </section>
       </main>
     );
@@ -311,6 +338,21 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
           />
           Loading your workspace…
         </div>
+      </main>
+    );
+  }
+
+  if (apiMode && offline && offlineProblem) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[var(--background)] p-6">
+        <section className="w-full max-w-sm space-y-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6">
+          <h1 className="text-lg font-semibold">Offline access is not ready</h1>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            {offlineProblem === "missing_pin"
+              ? "Reconnect, sign in, and set an offline PIN in Settings. Your saved sales remain on this device."
+              : "Reconnect and sign in once to save this workspace on the device."}
+          </p>
+        </section>
       </main>
     );
   }
@@ -342,12 +384,12 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (apiMode && offline && !["/pos", "/products"].includes(pathname)) {
+  if (apiMode && offline && !["/pos", "/products", "/sales"].includes(pathname)) {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--background)] p-6">
         <section className="space-y-3 text-center">
           <h1 className="text-lg font-semibold">This page needs a connection</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">Products and sales paid by cash, card, or transfer are available offline.</p>
+          <p className="text-sm text-[var(--muted-foreground)]">Products, Sales, and Point of sale are available offline.</p>
           <Button asChild><Link href="/pos">Open point of sale</Link></Button>
         </section>
       </main>

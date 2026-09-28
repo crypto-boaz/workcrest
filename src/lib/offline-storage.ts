@@ -1,4 +1,4 @@
-import type { ApiProduct } from "@/lib/commerce-api";
+import type { ApiProduct, ApiSale } from "@/lib/commerce-api";
 import type { TenantBootstrap, TenantManifest } from "@/lib/platform-types";
 
 const DATABASE_NAME = "workcrest-offline-v1";
@@ -45,6 +45,11 @@ export interface PendingOfflineSale {
 export interface OfflineCatalogue {
   products: ApiProduct[];
   complete: boolean;
+  savedAt: string;
+}
+
+export interface OfflineSalesSnapshot {
+  sales: ApiSale[];
   savedAt: string;
 }
 
@@ -114,6 +119,37 @@ export const offlineStorage = {
   getCatalogue: (scope: string) => read<OfflineCatalogue>(`products:${scope}`),
   saveCatalogue: (scope: string, catalogue: OfflineCatalogue) =>
     write(`products:${scope}`, catalogue),
+  getSalesSnapshot: (scope: string, userId: string) =>
+    read<OfflineSalesSnapshot>(`sales-history:${scope}:${userId}`),
+  rememberSales: async (scope: string, userId: string, sales: ApiSale[]) => {
+    if (!sales.length) return;
+    const database = await openDatabase();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(STORE, "readwrite");
+        const store = transaction.objectStore(STORE);
+        const key = `sales-history:${scope}:${userId}`;
+        const request = store.get(key);
+        request.onsuccess = () => {
+          const previous = request.result as OfflineSalesSnapshot | undefined;
+          const merged = new Map<string, ApiSale>();
+          for (const sale of previous?.sales ?? []) merged.set(sale.id, sale);
+          for (const sale of sales) merged.set(sale.id, sale);
+          store.put({
+            sales: [...merged.values()]
+              .sort((a, b) => Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""))
+              .slice(0, 1000),
+            savedAt: new Date().toISOString(),
+          } satisfies OfflineSalesSnapshot, key);
+        };
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    } finally {
+      database.close();
+    }
+  },
   getSales: async (scope: string): Promise<PendingOfflineSale[]> => {
     const database = await openDatabase();
     try {

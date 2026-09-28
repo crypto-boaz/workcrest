@@ -57,6 +57,7 @@ export function PwaInstallCard() {
     }
     try {
       await offlineStorage.setPin(pin);
+      window.dispatchEvent(new Event("workcrest-offline-pin-set"));
       setHasPin(true);
       setPin("");
       setPinError("");
@@ -70,7 +71,7 @@ export function PwaInstallCard() {
       <CardHeader>
         <CardTitle>Install Workcrest</CardTitle>
         <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-          Open Workcrest from your device like an app. Visit Point of sale and Products while online to prepare them for offline use.
+          Open Workcrest from your device like an app. Visit Point of sale, Products, and Sales while online to prepare them for offline use.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">

@@ -36,7 +36,7 @@ export function SidebarContent({
     signOut,
   } = usePlatform();
   const primaryNavigation: readonly NavigationItem[] = moduleEnabled("commerce")
-    ? offline ? navigation.filter((item) => ["/pos", "/products"].includes(item.href)) : navigation
+    ? offline ? navigation.filter((item) => ["/pos", "/products", "/sales"].includes(item.href)) : navigation
     : [];
 
   const navItems = (items: readonly NavigationItem[]) =>
@@ -149,7 +149,7 @@ export function SidebarContent({
               </select>
             </label>
           )}
-          <Button
+          {!offline && <Button
             variant="ghost"
             className={cn(
               "w-full justify-start text-[var(--sidebar-muted)] hover:bg-[var(--sidebar-hover)] hover:text-white",
@@ -159,7 +159,7 @@ export function SidebarContent({
           >
             <LogOut className="size-4" />
             {!collapsed && "Sign out"}
-          </Button>
+          </Button>}
         </div>
 
         {onCollapse && (

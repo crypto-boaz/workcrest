@@ -2,6 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { ShieldAlert, X } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { AppHeader } from "@/components/app-header";
@@ -9,13 +10,32 @@ import { CommandSearch } from "@/components/command-search";
 import { usePlatform } from "@/components/platform-provider";
 import { SidebarContent } from "@/components/sidebar-content";
 import { cn } from "@/lib/utils";
+import { offlineStorage } from "@/lib/offline-storage";
+import { apiMode } from "@/lib/platform-api";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { bootstrap } = usePlatform();
+  const { bootstrap, offline } = usePlatform();
   const sidebarStorageKey = `saas.sidebar.${bootstrap.organization.id}`;
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [offlinePinReady, setOfflinePinReady] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!apiMode) return;
+    let active = true;
+    const refreshPin = () => {
+      void offlineStorage.getPin()
+        .then((pin) => { if (active) setOfflinePinReady(Boolean(pin)); })
+        .catch(() => { if (active) setOfflinePinReady(false); });
+    };
+    refreshPin();
+    window.addEventListener("workcrest-offline-pin-set", refreshPin);
+    return () => {
+      active = false;
+      window.removeEventListener("workcrest-offline-pin-set", refreshPin);
+    };
+  }, [bootstrap.user.id]);
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -106,6 +126,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 })}
                 .
               </span>
+            </div>
+          )}
+          {apiMode && !offline && !bootstrap.support_session && offlinePinReady === false && (
+            <div role="status" className="border-b border-amber-400/40 bg-amber-400/10 px-4 py-2 text-xs text-amber-800 dark:text-amber-200 sm:px-6">
+              Offline access needs a PIN on this device. <Link href="/settings" className="font-semibold underline">Set it in Settings</Link> while connected.
             </div>
           )}
           <main className="min-w-0">{children}</main>

@@ -350,7 +350,7 @@ const todayInput = () => new Date().toISOString().slice(0, 10);
 
 export function ExpensesPage() {
   const { state, addExpense } = useBusinessStore();
-  const { bootstrap } = usePlatform();
+  const { bootstrap, offline } = usePlatform();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
@@ -386,6 +386,7 @@ export function ExpensesPage() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (offline) return;
     addExpense({ ...form, date: new Date(form.date).toISOString() });
     setForm({
       title: "",
@@ -414,6 +415,7 @@ export function ExpensesPage() {
 
   return (
     <Workspace>
+      {offline && <p role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">Showing expenses saved on this device. Recording expenses needs a connection.</p>}
       <PageHeader
         eyebrow="Cash outflow"
         title="Expenses"
@@ -421,7 +423,7 @@ export function ExpensesPage() {
         actions={
           <>
             <ExportButton onClick={exportExpenses} />
-            <Button onClick={() => setModalOpen(true)}>
+            <Button disabled={offline} onClick={() => setModalOpen(true)}>
               <Plus className="size-4" /> Record expense
             </Button>
           </>
@@ -431,7 +433,7 @@ export function ExpensesPage() {
         <StatTile
           label="Total expenses"
           value={formatCurrency(total)}
-          detail="Current demo period"
+          detail="Loaded expense records"
           icon={WalletCards}
           tone="red"
         />
@@ -645,7 +647,7 @@ export function ExpensesPage() {
             >
               Cancel
             </Button>
-            <Button type="submit">Save expense</Button>
+            <Button type="submit" disabled={offline}>Save expense</Button>
           </ModalFooter>
         </form>
       </Modal>

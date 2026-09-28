@@ -9,6 +9,7 @@ import { BrandMark } from "@/components/brand-mark";
 import { usePlatform } from "@/components/platform-provider";
 import { Button } from "@/components/ui/button";
 import { navigation, secondaryNavigation } from "@/lib/navigation";
+import { isOfflineRoute } from "@/lib/offline-routes";
 import { cn } from "@/lib/utils";
 
 interface SidebarContentProps {
@@ -36,7 +37,7 @@ export function SidebarContent({
     signOut,
   } = usePlatform();
   const primaryNavigation: readonly NavigationItem[] = moduleEnabled("commerce")
-    ? offline ? navigation.filter((item) => ["/pos", "/products", "/sales"].includes(item.href)) : navigation
+    ? offline ? navigation.filter((item) => isOfflineRoute(item.href)) : navigation
     : [];
 
   const navItems = (items: readonly NavigationItem[]) =>
@@ -109,7 +110,7 @@ export function SidebarContent({
         >
           {navItems(primaryNavigation)}
           <div className="my-4 border-t border-[var(--sidebar-border)]" />
-          {!offline && navItems(secondaryNavigation)}
+          {navItems(secondaryNavigation)}
         </nav>
 
         <div className="shrink-0 border-t border-[var(--sidebar-border)] p-3">

@@ -1,4 +1,6 @@
 import type { ApiProduct, ApiSale } from "@/lib/commerce-api";
+import type { DashboardSummary, ApiNotification } from "@/lib/commerce-api";
+import type { BusinessState } from "@/lib/business-types";
 import type { TenantBootstrap, TenantManifest } from "@/lib/platform-types";
 
 const DATABASE_NAME = "workcrest-offline-v1";
@@ -50,6 +52,16 @@ export interface OfflineCatalogue {
 
 export interface OfflineSalesSnapshot {
   sales: ApiSale[];
+  savedAt: string;
+}
+
+export interface OfflineBusinessSnapshot {
+  resources: Partial<Pick<BusinessState, "products" | "sales" | "expenses">>;
+  savedAt: string;
+}
+
+export interface OfflineSnapshot<T> {
+  value: T;
   savedAt: string;
 }
 
@@ -121,6 +133,43 @@ export const offlineStorage = {
     write(`products:${scope}`, catalogue),
   getSalesSnapshot: (scope: string, userId: string) =>
     read<OfflineSalesSnapshot>(`sales-history:${scope}:${userId}`),
+  getBusinessSnapshot: (scope: string, userId: string) =>
+    read<OfflineBusinessSnapshot>(`business:${scope}:${userId}`),
+  rememberBusinessResources: async (
+    scope: string,
+    userId: string,
+    resources: OfflineBusinessSnapshot["resources"],
+  ) => {
+    const database = await openDatabase();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(STORE, "readwrite");
+        const store = transaction.objectStore(STORE);
+        const key = `business:${scope}:${userId}`;
+        const request = store.get(key);
+        request.onsuccess = () => {
+          const previous = request.result as OfflineBusinessSnapshot | undefined;
+          store.put({
+            resources: { ...previous?.resources, ...resources },
+            savedAt: new Date().toISOString(),
+          } satisfies OfflineBusinessSnapshot, key);
+        };
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    } finally {
+      database.close();
+    }
+  },
+  getDashboardSnapshot: (scope: string, userId: string) =>
+    read<OfflineSnapshot<DashboardSummary>>(`dashboard:${scope}:${userId}`),
+  saveDashboardSnapshot: (scope: string, userId: string, value: DashboardSummary) =>
+    write(`dashboard:${scope}:${userId}`, { value, savedAt: new Date().toISOString() } satisfies OfflineSnapshot<DashboardSummary>),
+  getNotificationsSnapshot: (scope: string, userId: string) =>
+    read<OfflineSnapshot<ApiNotification[]>>(`notifications:${scope}:${userId}`),
+  saveNotificationsSnapshot: (scope: string, userId: string, value: ApiNotification[]) =>
+    write(`notifications:${scope}:${userId}`, { value, savedAt: new Date().toISOString() } satisfies OfflineSnapshot<ApiNotification[]>),
   rememberSales: async (scope: string, userId: string, sales: ApiSale[]) => {
     if (!sales.length) return;
     const database = await openDatabase();

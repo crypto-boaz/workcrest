@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 
 import { usePlatform } from "@/components/platform-provider";
 import { navigation, secondaryNavigation } from "@/lib/navigation";
+import { isOfflineRoute } from "@/lib/offline-routes";
 
 const searchItems = [...navigation, ...secondaryNavigation];
 
@@ -19,13 +20,14 @@ export function CommandSearch({
 }) {
   const [query, setQuery] = useState("");
   const router = useRouter();
-  const { manifest } = usePlatform();
+  const { manifest, offline } = usePlatform();
   const results = useMemo(
     () =>
       searchItems.filter((item) =>
+        (!offline || isOfflineRoute(item.href)) &&
         item.label.toLowerCase().includes(query.trim().toLowerCase()),
       ),
-    [query],
+    [offline, query],
   );
 
   const handleOpenChange = (value: boolean) => {
@@ -34,7 +36,8 @@ export function CommandSearch({
   };
 
   const go = (href: string) => {
-    router.push(href);
+    if (offline) window.location.assign(href);
+    else router.push(href);
     handleOpenChange(false);
   };
 

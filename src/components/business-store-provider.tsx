@@ -31,8 +31,11 @@ import type {
 import {
   businessApi,
   loadBusinessState,
+  mapApiProduct,
+  mapApiSale,
   type BusinessResource,
 } from "@/lib/business-api";
+import { offlineScope, offlineStorage } from "@/lib/offline-storage";
 import { seedBusinessState } from "@/lib/seed-business-data";
 import { apiMode } from "@/lib/platform-api";
 import { formatCurrency } from "@/lib/utils";
@@ -170,7 +173,7 @@ export function BusinessStoreProvider({
   const actorName = platform?.bootstrap.user.full_name || "Store manager";
   const activeScope =
     apiMode && platform?.ready
-      ? `${platform.bootstrap.organization.id}.${platform.currentLocation.id}`
+      ? `${platform.bootstrap.organization.id}.${platform.currentLocation.id}.${platform.bootstrap.user.id}`
       : apiMode
         ? "pending"
         : "mock";
@@ -238,7 +241,32 @@ export function BusinessStoreProvider({
       loadedResourcesRef.current = new Set();
       setState(emptyBusinessState(platform));
     }
-    const resources = (platform.offline ? [] : resourcesForPath(pathname)).filter(
+    if (platform.offline) {
+      let active = true;
+      const scope = offlineScope(platform.bootstrap.organization.id, platform.currentLocation.id);
+      void Promise.all([
+        offlineStorage.getCatalogue(scope),
+        offlineStorage.getSalesSnapshot(scope, platform.bootstrap.user.id),
+        offlineStorage.getBusinessSnapshot(scope, platform.bootstrap.user.id),
+      ]).then(([catalogue, sales, business]) => {
+        if (!active || activeScopeRef.current !== activeScope) return;
+        setState((current) => ({
+          ...current,
+          products: catalogue?.products.map(mapApiProduct) ?? business?.resources.products ?? [],
+          sales: sales?.sales.map(mapApiSale) ?? business?.resources.sales ?? [],
+          expenses: business?.resources.expenses ?? [],
+        }));
+        setLoadedScope(activeScope);
+        setHydrated(true);
+      }).catch(() => {
+        if (active) {
+          setLoadedScope(activeScope);
+          setHydrated(true);
+        }
+      });
+      return () => { active = false; };
+    }
+    const resources = resourcesForPath(pathname).filter(
       (resource) => !loadedResourcesRef.current.has(resource),
     );
     if (!resources.length) {
@@ -256,6 +284,18 @@ export function BusinessStoreProvider({
           setState((current) =>
             mergeBusinessResources(current, nextState, resources),
           );
+          const cachedResources = Object.fromEntries(
+            resources
+              .filter((resource) => ["products", "sales", "expenses"].includes(resource))
+              .map((resource) => [resource, nextState[resource]]),
+          ) as Partial<Pick<BusinessState, "products" | "sales" | "expenses">>;
+          if (Object.keys(cachedResources).length) {
+            void offlineStorage.rememberBusinessResources(
+              offlineScope(platform.bootstrap.organization.id, platform.currentLocation.id),
+              platform.bootstrap.user.id,
+              cachedResources,
+            ).catch(() => undefined);
+          }
           resources.forEach((resource) => loadedResourcesRef.current.add(resource));
           setLoadedScope(activeScope);
           setHydrated(true);

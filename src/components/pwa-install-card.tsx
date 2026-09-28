@@ -71,7 +71,7 @@ export function PwaInstallCard() {
       <CardHeader>
         <CardTitle>Install Workcrest</CardTitle>
         <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-          Open Workcrest from your device like an app. Visit Point of sale, Products, and Sales while online to prepare them for offline use.
+          Open Workcrest from your device like an app. Visit Dashboard, Products, Sales, Point of sale, Expenses, Reports, Alerts, and Settings while online to prepare those pages for offline use.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -97,7 +97,7 @@ export function PwaInstallCard() {
           </Button>
         )}
         {hasPin ? (
-          <p className="text-xs text-emerald-700 dark:text-emerald-400">Offline PIN is ready on this device.</p>
+          <p className="text-xs text-emerald-700 dark:text-emerald-400">Offline PIN is ready on this device. You will unlock again after 30 minutes without activity.</p>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <input type="password" autoComplete="new-password" value={pin}

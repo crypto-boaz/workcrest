@@ -19,6 +19,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { mockBootstrap, mockManifest } from "@/lib/mock-platform";
 import { offlineStorage } from "@/lib/offline-storage";
+import { clearOfflineUnlock, readOfflineUnlock, touchOfflineUnlock } from "@/lib/offline-unlock";
+import { isOfflineRoute } from "@/lib/offline-routes";
 import { apiMode, platformApi } from "@/lib/platform-api";
 import type {
   CompanySettingsResponse,
@@ -65,7 +67,7 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const [offline, setOffline] = useState(false);
-  const [offlineUnlocked, setOfflineUnlocked] = useState(false);
+  const [unlockState, setUnlockState] = useState<{ scope: string; unlocked: boolean } | null>(null);
   const [offlineProblem, setOfflineProblem] = useState<"missing_identity" | "missing_pin" | null>(null);
   const [offlinePin, setOfflinePin] = useState("");
   const [offlinePinError, setOfflinePinError] = useState("");
@@ -113,6 +115,52 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
   const bootstrap = bootstrapQuery.data ?? mockBootstrap;
   const ready =
     !apiMode || Boolean(manifestQuery.data && bootstrapQuery.data);
+  const unlockScope = `${bootstrap.organization.id}.${bootstrap.user.id}`;
+  const offlineUnlockChecked = unlockState?.scope === unlockScope;
+  const offlineUnlocked = offlineUnlockChecked && unlockState.unlocked;
+
+  useEffect(() => {
+    if (!apiMode || !ready) return;
+    const timer = window.setTimeout(() => {
+      setUnlockState({ scope: unlockScope, unlocked: readOfflineUnlock(unlockScope) });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [ready, unlockScope]);
+
+  useEffect(() => {
+    if (!apiMode || !offlineUnlocked) return;
+    let lastWrite = 0;
+    const check = () => {
+      if (readOfflineUnlock(unlockScope)) return true;
+      setUnlockState({ scope: unlockScope, unlocked: false });
+      return false;
+    };
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - lastWrite < 15_000) return;
+      if (check()) {
+        touchOfflineUnlock(unlockScope);
+        lastWrite = now;
+      }
+    };
+    const onVisibility = () => { if (!document.hidden) check(); };
+    const interval = window.setInterval(check, 15_000);
+    window.addEventListener("pointerdown", onActivity);
+    window.addEventListener("pointermove", onActivity, { passive: true });
+    window.addEventListener("keydown", onActivity);
+    window.addEventListener("scroll", onActivity, { passive: true });
+    window.addEventListener("storage", check);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("pointerdown", onActivity);
+      window.removeEventListener("pointermove", onActivity);
+      window.removeEventListener("keydown", onActivity);
+      window.removeEventListener("scroll", onActivity);
+      window.removeEventListener("storage", check);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [offlineUnlocked, unlockScope]);
   useEffect(() => {
     if (!apiMode || !manifestQuery.data || !bootstrapQuery.data || offline) return;
     if (bootstrapQuery.data.support_session) return;
@@ -128,7 +176,6 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
     const onOffline = () => {
       if (!apiMode || !manifestQuery.data || !bootstrapQuery.data) return;
       setOffline(true);
-      setOfflineUnlocked(false);
       void Promise.all([offlineStorage.getIdentity(), offlineStorage.getPin()])
         .then(([identity, pin]) => {
           setOfflineProblem(!identity ? "missing_identity" : !pin ? "missing_pin" : null);
@@ -141,7 +188,6 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
           queryClient.setQueryData(["tenant-manifest"], nextManifest);
           queryClient.setQueryData(["tenant-bootstrap"], nextBootstrap);
           setOffline(false);
-          setOfflineUnlocked(false);
           setOfflineProblem(null);
         }).catch(() => undefined);
     };
@@ -291,6 +337,7 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
         }
         await offlineStorage.clearIdentity();
         await offlineStorage.clearPin();
+        clearOfflineUnlock();
         queryClient.clear();
         window.location.assign("/auth/login");
       },
@@ -357,6 +404,10 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (apiMode && offline && !offlineUnlockChecked) {
+    return <main className="grid min-h-screen place-items-center bg-[var(--background)] p-6" role="status">Checking offline access…</main>;
+  }
+
   if (apiMode && offline && !offlineUnlocked) {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--background)] p-6">
@@ -365,7 +416,8 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
             event.preventDefault();
             void offlineStorage.verifyPin(offlinePin).then((valid) => {
               if (valid) {
-                setOfflineUnlocked(true);
+                touchOfflineUnlock(unlockScope);
+                setUnlockState({ scope: unlockScope, unlocked: true });
                 setOfflinePin("");
                 setOfflinePinError("");
               } else setOfflinePinError("Incorrect offline PIN.");
@@ -384,12 +436,12 @@ function PlatformRuntime({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (apiMode && offline && !["/pos", "/products", "/sales"].includes(pathname)) {
+  if (apiMode && offline && !isOfflineRoute(pathname)) {
     return (
       <main className="grid min-h-screen place-items-center bg-[var(--background)] p-6">
         <section className="space-y-3 text-center">
           <h1 className="text-lg font-semibold">This page needs a connection</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">Products, Sales, and Point of sale are available offline.</p>
+          <p className="text-sm text-[var(--muted-foreground)]">Open a saved page from the offline navigation.</p>
           <Button asChild><Link href="/pos">Open point of sale</Link></Button>
         </section>
       </main>

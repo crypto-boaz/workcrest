@@ -56,7 +56,7 @@ import {
 
 export function ReportsPage() {
   const { state } = useBusinessStore();
-  const { bootstrap } = usePlatform();
+  const { bootstrap, offline } = usePlatform();
   const [period, setPeriod] = useState("30");
   const [transactionQuery, setTransactionQuery] = useState("");
   const [fromDate, setFromDate] = useState("");
@@ -174,6 +174,7 @@ export function ReportsPage() {
 
   return (
     <Workspace>
+      {offline && <p role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">Offline report based on records saved on this device. Totals may be incomplete until reconnect.</p>}
       <PageHeader
         eyebrow="Business intelligence"
         title="Reports"
@@ -380,6 +381,7 @@ export function ReportsPage() {
 }
 
 export function AlertsPage() {
+  const { offline } = usePlatform();
   const {
     notifications: allNotifications,
     markRead: markNotificationRead,
@@ -414,6 +416,7 @@ export function AlertsPage() {
 
   return (
     <Workspace size="medium">
+      {offline && <p role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">Showing saved notifications. Read and dismiss actions need a connection.</p>}
       <PageHeader
         eyebrow="Activity"
         title="Notification center"
@@ -421,7 +424,7 @@ export function AlertsPage() {
         actions={
           <Button
             variant="secondary"
-            disabled={unread === 0}
+            disabled={offline || unread === 0}
             onClick={markAllNotificationsRead}
           >
             <CheckCheck className="size-4" /> Mark all read
@@ -517,18 +520,19 @@ export function AlertsPage() {
                       {formatTime(notification.createdAt)}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Button
+                      {!offline && <Button
                         asChild
                         size="sm"
                         variant="secondary"
                         onClick={() => markNotificationRead(notification.id)}
                       >
                         <Link href={notification.href}>View related page</Link>
-                      </Button>
+                      </Button>}
                       {notification.unread && (
                         <Button
                           size="sm"
                           variant="ghost"
+                          disabled={offline}
                           onClick={() =>
                             markNotificationRead(notification.id)
                           }
@@ -541,6 +545,7 @@ export function AlertsPage() {
                   <Button
                     variant="ghost"
                     size="icon"
+                    disabled={offline}
                     className="size-8 shrink-0"
                     onClick={() => dismissNotification(notification.id)}
                     aria-label={`Dismiss ${notification.title}`}
@@ -572,6 +577,7 @@ export function SettingsPage() {
     bootstrap,
     currentLocation,
     applyCompanySettings,
+    offline,
   } = usePlatform();
   const primaryLocation =
     bootstrap.locations.find((location) => location.is_primary) ??
@@ -600,6 +606,7 @@ export function SettingsPage() {
     },
   }));
   const isOwner = Boolean(bootstrap.membership?.is_owner);
+  const canEdit = isOwner && !offline;
   const mutation = useMutation({
     mutationFn: platformApi.updateCompanySettings,
     onSuccess: (settings) => {
@@ -694,12 +701,12 @@ export function SettingsPage() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (isOwner) mutation.mutate(form);
+    if (canEdit) mutation.mutate(form);
   };
 
   const confirmIdentity = (event: FormEvent) => {
     event.preventDefault();
-    if (password) reauthentication.mutate();
+    if (password && !offline) reauthentication.mutate();
   };
 
   const updateAddress = (
@@ -714,6 +721,7 @@ export function SettingsPage() {
 
   return (
     <Workspace size="medium">
+      {offline && <p role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">Company settings are read-only offline. Changes can be saved after reconnecting.</p>}
       <PageHeader
         eyebrow="Company"
         title="Company settings"
@@ -773,7 +781,7 @@ export function SettingsPage() {
                   </p>
                 )}
               </div>
-              {isOwner && (
+              {canEdit && (
                 <div className="flex flex-wrap gap-2">
                   <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold hover:bg-[var(--surface-hover)] focus-within:ring-2 focus-within:ring-[var(--ring)]">
                     <ImagePlus className="size-3.5" />
@@ -824,7 +832,7 @@ export function SettingsPage() {
             <FormField label="Company name" className="sm:col-span-2">
               <input
                 required
-                disabled={!isOwner}
+                disabled={!canEdit}
                 className={inputClass}
                 value={form.name}
                 onChange={(event) =>
@@ -837,7 +845,7 @@ export function SettingsPage() {
               <div className="flex gap-2">
                 <input
                   type="color"
-                  disabled={!isOwner}
+                  disabled={!canEdit}
                   aria-label="Choose primary brand colour"
                   value={form.primary_color}
                   onChange={(event) =>
@@ -850,7 +858,7 @@ export function SettingsPage() {
                 />
                 <input
                   required
-                  disabled={!isOwner}
+                  disabled={!canEdit}
                   pattern="#[0-9A-Fa-f]{6}"
                   className={inputClass}
                   value={form.primary_color}
@@ -867,7 +875,7 @@ export function SettingsPage() {
             <FormField label="Currency">
               <input
                 required
-                disabled={!isOwner}
+                disabled={!canEdit}
                 maxLength={3}
                 pattern="[A-Za-z]{3}"
                 list="currency-codes"
@@ -904,7 +912,7 @@ export function SettingsPage() {
             <FormField label="Address line 1" className="sm:col-span-2">
               <input
                 required
-                disabled={!isOwner}
+                disabled={!canEdit}
                 className={inputClass}
                 value={form.address.line1}
                 onChange={(event) =>
@@ -914,7 +922,7 @@ export function SettingsPage() {
             </FormField>
             <FormField label="Address line 2" className="sm:col-span-2">
               <input
-                disabled={!isOwner}
+                disabled={!canEdit}
                 className={inputClass}
                 value={form.address.line2 ?? ""}
                 onChange={(event) =>
@@ -924,7 +932,7 @@ export function SettingsPage() {
             </FormField>
             <FormField label="City">
               <input
-                disabled={!isOwner}
+                disabled={!canEdit}
                 className={inputClass}
                 value={form.address.city ?? ""}
                 onChange={(event) =>
@@ -934,7 +942,7 @@ export function SettingsPage() {
             </FormField>
             <FormField label="State / region">
               <input
-                disabled={!isOwner}
+                disabled={!canEdit}
                 className={inputClass}
                 value={form.address.state ?? ""}
                 onChange={(event) =>
@@ -944,7 +952,7 @@ export function SettingsPage() {
             </FormField>
             <FormField label="Postal code">
               <input
-                disabled={!isOwner}
+                disabled={!canEdit}
                 className={inputClass}
                 value={form.address.postal_code ?? ""}
                 onChange={(event) =>
@@ -955,7 +963,7 @@ export function SettingsPage() {
             <FormField label="Country">
               <input
                 required
-                disabled={!isOwner}
+                disabled={!canEdit}
                 className={inputClass}
                 value={form.address.country}
                 onChange={(event) =>
@@ -978,7 +986,7 @@ export function SettingsPage() {
           <CardContent className="space-y-4">
             <FormField label="Receipt header">
               <input
-                disabled={!isOwner}
+                disabled={!canEdit}
                 className={inputClass}
                 value={form.receipt_header}
                 onChange={(event) =>
@@ -988,7 +996,7 @@ export function SettingsPage() {
             </FormField>
             <FormField label="Receipt footer">
               <textarea
-                disabled={!isOwner}
+                disabled={!canEdit}
                 rows={3}
                 className={`${inputClass} h-auto py-2.5`}
                 value={form.receipt_footer}
@@ -1011,7 +1019,7 @@ export function SettingsPage() {
           </p>
         )}
 
-        {isOwner && (
+        {canEdit && (
           <div className="flex justify-end">
             <Button type="submit" disabled={mutation.isPending}>
               <Save className="size-4" />
@@ -1074,7 +1082,7 @@ export function SettingsPage() {
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={reauthentication.isPending}>
+            <Button type="submit" disabled={offline || reauthentication.isPending}>
               <ShieldCheck className="size-4" />
               {reauthentication.isPending
                 ? "Confirming…"

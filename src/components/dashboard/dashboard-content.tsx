@@ -14,16 +14,17 @@ import {
   TrendingUp,
   WalletCards,
 } from "lucide-react";
-import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useBusinessStore } from "@/components/business-store-provider";
 import { usePlatform } from "@/components/platform-provider";
 import { useNotifications } from "@/components/use-notifications";
+import { WorkspaceLink } from "@/components/workspace-link";
 import type { BusinessState } from "@/lib/business-types";
 import { loadBusinessState } from "@/lib/business-api";
 import { commerceApi, type DashboardSummary } from "@/lib/commerce-api";
+import { offlineScope, offlineStorage, type OfflineSnapshot } from "@/lib/offline-storage";
 import { apiMode, PlatformApiError } from "@/lib/platform-api";
 import {
   SalesChart,
@@ -244,9 +245,9 @@ function RecentTransactions({
           </p>
         </div>
         <Button asChild variant="ghost" size="sm">
-          <Link href="/sales">
+          <WorkspaceLink href="/sales">
             View all <ArrowRight className="size-3.5" />
-          </Link>
+          </WorkspaceLink>
         </Button>
       </CardHeader>
       {transactions.length ? (
@@ -357,7 +358,7 @@ function StockWatch({ alerts }: { alerts: DashboardData["stockAlerts"] }) {
           </div>
         ))}
         <Button asChild variant="secondary" size="sm" className="mt-3 w-full">
-          <Link href="/products">Review inventory</Link>
+          <WorkspaceLink href="/products">Review inventory</WorkspaceLink>
         </Button>
       </CardContent>
     </Card>
@@ -400,7 +401,7 @@ function FinanceSummary({
           </p>
         </div>
         <Button asChild variant="ghost" size="sm">
-          <Link href="/expenses">Details</Link>
+          <WorkspaceLink href="/expenses">Details</WorkspaceLink>
         </Button>
       </CardHeader>
       <CardContent>
@@ -442,17 +443,38 @@ function FinanceSummary({
 export function DashboardContent() {
   const { state, hydrated } = useBusinessStore();
   const { notifications } = useNotifications();
-  const { bootstrap, currentLocation, ready } = usePlatform();
+  const { bootstrap, currentLocation, ready, offline } = usePlatform();
+  const scope = offlineScope(bootstrap.organization.id, currentLocation.id);
+  const snapshotKey = `${scope}:${bootstrap.user.id}`;
+  const [cachedSummary, setCachedSummary] = useState<{
+    key: string;
+    snapshot: OfflineSnapshot<DashboardSummary>;
+  } | null>(null);
   const dashboardQuery = useQuery({
     queryKey: ["dashboard-summary", currentLocation.id],
     queryFn: ({ signal }) => commerceApi.dashboard(currentLocation.id, signal),
-    enabled: apiMode && ready,
+    enabled: apiMode && ready && !offline,
     staleTime: 30_000,
     retry: (failureCount, error) =>
       !(error instanceof PlatformApiError && error.status === 403) &&
       failureCount < 1,
   });
+  useEffect(() => {
+    let active = true;
+    void offlineStorage.getDashboardSnapshot(scope, bootstrap.user.id)
+      .then((snapshot) => {
+        if (active && snapshot) setCachedSummary({ key: snapshotKey, snapshot });
+      }).catch(() => undefined);
+    return () => { active = false; };
+  }, [bootstrap.user.id, scope, snapshotKey]);
+  useEffect(() => {
+    if (!apiMode || !dashboardQuery.data || offline) return;
+    void offlineStorage.saveDashboardSnapshot(scope, bootstrap.user.id, dashboardQuery.data)
+      .catch(() => undefined);
+  }, [bootstrap.user.id, dashboardQuery.data, offline, scope]);
+  const savedSummary = cachedSummary?.key === snapshotKey ? cachedSummary.snapshot : null;
   const needsLegacyOverview =
+    !offline &&
     dashboardQuery.error instanceof PlatformApiError &&
     dashboardQuery.error.status === 403;
   const fallbackQuery = useQuery({
@@ -461,13 +483,16 @@ export function DashboardContent() {
       loadBusinessState(currentLocation.id, bootstrap, {
         resources: ["products", "sales", "suppliers", "expenses"],
       }),
-    enabled: apiMode && needsLegacyOverview,
+    enabled: apiMode && needsLegacyOverview && !offline,
     staleTime: 30_000,
     retry: false,
   });
-  const dashboardState = fallbackQuery.data
-    ? { ...fallbackQuery.data, notifications }
-    : state;
+  const dashboardState = useMemo(
+    () => fallbackQuery.data
+      ? { ...fallbackQuery.data, notifications }
+      : state,
+    [fallbackQuery.data, notifications, state],
+  );
   const locale = bootstrap.organization.locale;
   const firstName =
     bootstrap.user.full_name.trim().split(/\s+/)[0] || "there";
@@ -609,10 +634,11 @@ export function DashboardContent() {
       lastUpdated: dashboardState.sales[0]?.createdAt ?? new Date().toISOString(),
     };
   }, [bootstrap.branding.display_name, dashboardState, locale]);
+  const summary = dashboardQuery.data ?? savedSummary?.value;
   const data =
-    apiMode && dashboardQuery.data
+    apiMode && summary
       ? dashboardFromSummary(
-          dashboardQuery.data,
+          summary,
           bootstrap.branding.display_name,
           locale,
           bootstrap.organization.timezone,
@@ -620,21 +646,21 @@ export function DashboardContent() {
         )
       : localData;
 
-  if (apiMode && dashboardQuery.isPending) {
+  if (apiMode && !offline && dashboardQuery.isPending && !savedSummary) {
     return (
       <div role="status" className="p-6 text-sm text-[var(--muted-foreground)]">
         Loading dashboard…
       </div>
     );
   }
-  if (apiMode && needsLegacyOverview && fallbackQuery.isPending) {
+  if (apiMode && needsLegacyOverview && fallbackQuery.isPending && !savedSummary) {
     return (
       <div role="status" className="p-6 text-sm text-[var(--muted-foreground)]">
         Loading dashboard…
       </div>
     );
   }
-  if (apiMode && dashboardQuery.isError && (!needsLegacyOverview || fallbackQuery.isError)) {
+  if (apiMode && !offline && dashboardQuery.isError && !savedSummary && (!needsLegacyOverview || fallbackQuery.isError)) {
     return (
       <div role="alert" className="space-y-3 p-6 text-sm">
         <p>Dashboard data could not be loaded.</p>
@@ -650,6 +676,13 @@ export function DashboardContent() {
 
   return (
     <div className="space-y-5">
+      {offline && (
+        <p role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+          {savedSummary
+            ? `Offline overview last saved ${new Date(savedSummary.savedAt).toLocaleString()}. Figures may have changed.`
+            : "Offline overview uses saved products and sales. Open Dashboard online to save the full summary."}
+        </p>
+      )}
       <section className="flex flex-col justify-between gap-5 rounded-xl border border-[var(--border)] bg-[var(--hero)] p-5 shadow-[var(--card-shadow)] sm:flex-row sm:items-end sm:p-6">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--primary-soft-foreground)]">
@@ -735,7 +768,7 @@ export function DashboardContent() {
             size="sm"
             className="sm:ml-auto"
           >
-            <Link href="/alerts">Open alerts</Link>
+            <WorkspaceLink href="/alerts">Open alerts</WorkspaceLink>
           </Button>
         </Card>
         <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">

@@ -17,9 +17,9 @@ import {
   UserRound,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import Link from "next/link";
 
 import { usePlatform } from "@/components/platform-provider";
+import { WorkspaceLink } from "@/components/workspace-link";
 import { useNotifications } from "@/components/use-notifications";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatTime } from "@/lib/utils";
@@ -118,9 +118,9 @@ export function AppHeader({
         </Button>
 
         <Button asChild size="icon" className="sm:hidden">
-          <Link href="/pos" aria-label="New sale">
+          <WorkspaceLink href="/pos" aria-label="New sale">
             <Plus className="size-[18px]" />
-          </Link>
+          </WorkspaceLink>
         </Button>
 
         <Button
@@ -192,12 +192,12 @@ export function AppHeader({
               ))}
               <DropdownMenu.Separator className="my-1 h-px bg-[var(--border)]" />
               <DropdownMenu.Item asChild>
-                <Link
+                <WorkspaceLink
                   href="/alerts"
                   className={`${menuItem} justify-center font-semibold text-[var(--primary-soft-foreground)]`}
                 >
                   View alert center
-                </Link>
+                </WorkspaceLink>
               </DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
@@ -257,10 +257,10 @@ export function AppHeader({
         </DropdownMenu.Root>
 
         <Button asChild className="hidden sm:inline-flex">
-          <Link href="/pos">
+          <WorkspaceLink href="/pos">
             <Plus className="size-4" />
             New sale
-          </Link>
+          </WorkspaceLink>
         </Button>
       </div>
     </header>

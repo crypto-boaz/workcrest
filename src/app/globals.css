@@ -157,3 +157,22 @@ button {
     margin: 0;
   }
 }
+@media print {
+  body:has(#job-card-print) * { visibility: hidden !important; }
+  body:has(#job-card-print) #job-card-print,
+  body:has(#job-card-print) #job-card-print * { visibility: visible !important; }
+  #job-card-print {
+    display: block !important;
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 80mm;
+    padding: 8mm;
+    color: #111;
+    background: white;
+    font: 12px/1.5 Georgia, serif;
+  }
+  #job-card-print h1 { font-size: 18px; text-align: center; font-weight: bold; }
+  #job-card-print h2 { font-size: 13px; font-weight: bold; margin-top: 12px; }
+  #job-card-print p { margin: 5px 0; white-space: pre-wrap; }
+  #job-card-print hr { margin: 12px 0; border: 0; border-top: 1px solid #333; }
+}

@@ -594,6 +594,7 @@ export function SettingsPage() {
     name: bootstrap.organization.name,
     primary_color: bootstrap.branding.primary_color,
     currency: bootstrap.organization.currency,
+    job_cards_enabled: Boolean(bootstrap.organization.job_cards_enabled),
     receipt_header: bootstrap.branding.receipt_header,
     receipt_footer: bootstrap.branding.receipt_footer,
     address: {
@@ -615,6 +616,7 @@ export function SettingsPage() {
         name: settings.organization.name,
         primary_color: settings.branding.primary_color,
         currency: settings.organization.currency,
+        job_cards_enabled: Boolean(settings.organization.job_cards_enabled),
         receipt_header: settings.branding.receipt_header,
         receipt_footer: settings.branding.receipt_footer,
         address: {
@@ -746,6 +748,29 @@ export function SettingsPage() {
       <div className="mb-4"><PwaInstallCard /></div>
 
       <form onSubmit={submit} className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Repair services</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <label className="flex items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={form.job_cards_enabled}
+                disabled={!canEdit}
+                onChange={(event) => setForm({ ...form, job_cards_enabled: event.target.checked })}
+                className="mt-1 size-4"
+              />
+              <span>
+                <span className="block font-medium">Enable job cards</span>
+                <span className="block text-xs text-[var(--muted-foreground)]">
+                  Track gadget repairs, payments, status, and printable customer copies.
+                </span>
+              </span>
+            </label>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">

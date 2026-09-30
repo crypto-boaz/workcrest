@@ -3,6 +3,7 @@ export const offlineRoutes = [
   "/products",
   "/sales",
   "/pos",
+  "/job-cards",
   "/expenses",
   "/reports",
   "/alerts",

@@ -15,6 +15,9 @@ from .models import (
     Expense,
     HeldCart,
     InventoryBalance,
+    JobCard,
+    JobCardEvent,
+    JobCardPayment,
     Payment,
     Product,
     PurchaseItem,
@@ -32,6 +35,81 @@ from .services import next_document_number
 
 
 MONEY_FIELD = DecimalField(max_digits=18, decimal_places=2)
+
+
+class JobCardPaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = JobCardPayment
+        fields = ["id", "amount", "method", "reference", "received_at"]
+        read_only_fields = fields
+
+
+class JobCardEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = JobCardEvent
+        fields = ["id", "status", "note", "created_at"]
+        read_only_fields = fields
+
+
+class JobCardSerializer(serializers.ModelSerializer):
+    labour_charge = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0"), required=False)
+    parts_charge = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0"), required=False)
+    payments = JobCardPaymentSerializer(many=True, read_only=True)
+    events = JobCardEventSerializer(many=True, read_only=True)
+    amount_paid = serializers.SerializerMethodField()
+    total_charge = serializers.SerializerMethodField()
+    balance_due = serializers.SerializerMethodField()
+    location_name = serializers.CharField(source="location.name", read_only=True)
+
+    class Meta:
+        model = JobCard
+        fields = [
+            "id", "number", "location_name", "customer_name", "customer_phone",
+            "device_name", "serial_number", "reported_issue", "intake_condition",
+            "accessories", "diagnosis", "work_done", "status", "labour_charge",
+            "parts_charge", "expected_at", "received_at", "completed_at",
+            "collected_at", "amount_paid", "total_charge", "balance_due",
+            "payments", "events", "version", "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id", "number", "location_name", "received_at", "completed_at",
+            "collected_at", "version", "created_at", "updated_at",
+        ]
+
+    def get_amount_paid(self, obj):
+        return sum((payment.amount for payment in obj.payments.all()), Decimal("0"))
+
+    def get_total_charge(self, obj):
+        return obj.labour_charge + obj.parts_charge
+
+    def get_balance_due(self, obj):
+        return max(self.get_total_charge(obj) - self.get_amount_paid(obj), Decimal("0"))
+
+    def validate(self, attrs):
+        if self.instance is None and attrs.get("status", JobCard.Status.RECEIVED) != JobCard.Status.RECEIVED:
+            raise serializers.ValidationError({"status": "New jobs must start as received."})
+        if self.instance and "status" in attrs and attrs["status"] != self.instance.status:
+            transitions = {
+                "received": {"diagnosing", "awaiting_approval", "in_progress", "cancelled"},
+                "diagnosing": {"awaiting_approval", "in_progress", "cancelled"},
+                "awaiting_approval": {"in_progress", "cancelled"},
+                "in_progress": {"ready", "cancelled"},
+                "ready": {"in_progress", "collected"},
+            }
+            if attrs["status"] not in transitions.get(self.instance.status, set()):
+                raise serializers.ValidationError({"status": "This status change is not allowed."})
+        if self.instance:
+            paid = sum((payment.amount for payment in self.instance.payments.all()), Decimal("0"))
+            total = attrs.get("labour_charge", self.instance.labour_charge) + attrs.get("parts_charge", self.instance.parts_charge)
+            if total < paid:
+                raise serializers.ValidationError("Charges cannot be less than the amount already paid.")
+        return attrs
+
+
+class JobCardPaymentInputSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0.01"))
+    method = serializers.ChoiceField(choices=JobCardPayment.Method.choices)
+    reference = serializers.CharField(max_length=100, required=False, allow_blank=True)
 
 
 class CategorySerializer(serializers.ModelSerializer):

@@ -71,7 +71,7 @@ export function PwaInstallCard() {
       <CardHeader>
         <CardTitle>Install Workcrest</CardTitle>
         <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-          Open Workcrest from your device like an app. Visit Dashboard, Products, Sales, Point of sale, Expenses, Reports, Alerts, and Settings while online to prepare those pages for offline use.
+            Open Workcrest from your device like an app. Visit Dashboard, Products, Sales, Point of sale, Job cards (if enabled), Expenses, Reports, Alerts, and Settings while online to prepare those pages for offline use.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">

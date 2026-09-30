@@ -1,5 +1,5 @@
-const CACHE = "workcrest-shell-v4";
-const PAGES = new Set(["/dashboard", "/products", "/sales", "/pos", "/expenses", "/reports", "/alerts", "/settings"]);
+const CACHE = "workcrest-shell-v5";
+const PAGES = new Set(["/dashboard", "/products", "/sales", "/pos", "/job-cards", "/expenses", "/reports", "/alerts", "/settings"]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

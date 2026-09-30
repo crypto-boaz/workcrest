@@ -413,6 +413,7 @@ class CompanySettingsView(TenantContextMixin, APIView):
         organization, branding, location = self._objects(lock=True)
         current = {
             "name": organization.name,
+            "job_cards_enabled": organization.job_cards_enabled,
             "primary_color": branding.primary_color,
             "currency": organization.currency,
             "receipt_header": branding.receipt_header,
@@ -427,8 +428,9 @@ class CompanySettingsView(TenantContextMixin, APIView):
         values = {**current, **serializer.validated_data}
 
         organization.name = values["name"]
+        organization.job_cards_enabled = values["job_cards_enabled"]
         organization.currency = values["currency"]
-        organization.save(update_fields=["name", "currency", "updated_at"])
+        organization.save(update_fields=["name", "job_cards_enabled", "currency", "updated_at"])
 
         branding.display_name = values["name"]
         branding.primary_color = values["primary_color"]

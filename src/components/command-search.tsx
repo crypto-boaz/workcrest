@@ -20,14 +20,15 @@ export function CommandSearch({
 }) {
   const [query, setQuery] = useState("");
   const router = useRouter();
-  const { manifest, offline } = usePlatform();
+  const { manifest, bootstrap, offline } = usePlatform();
   const results = useMemo(
     () =>
       searchItems.filter((item) =>
         (!offline || isOfflineRoute(item.href)) &&
+        (item.href !== "/job-cards" || bootstrap.organization.job_cards_enabled) &&
         item.label.toLowerCase().includes(query.trim().toLowerCase()),
       ),
-    [offline, query],
+    [bootstrap.organization.job_cards_enabled, offline, query],
   );
 
   const handleOpenChange = (value: boolean) => {

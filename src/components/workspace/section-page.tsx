@@ -6,6 +6,7 @@ import { useBusinessStore } from "@/components/business-store-provider";
 import { SalesPage } from "@/components/workspace/sales-customers-pages";
 import { ProductsPage } from "@/components/workspace/products-page";
 import { PosPage } from "@/components/workspace/pos-page";
+import { JobCardsPage } from "@/components/workspace/job-cards-page";
 import { ReturnsPage } from "@/components/workspace/purchases-returns-pages";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -51,7 +52,7 @@ function AdminOnlyPage({ title }: { title: string }) {
 
 export function SectionPage({ section }: { section: string }) {
   const { hydrated } = useBusinessStore();
-  if (apiMode && !hydrated && !["products", "sales"].includes(section)) {
+  if (apiMode && !hydrated && !["products", "sales", "job-cards"].includes(section)) {
     return (
       <Workspace>
         <p role="status" className="p-5 text-sm text-[var(--muted-foreground)]">
@@ -67,6 +68,8 @@ export function SectionPage({ section }: { section: string }) {
       return <SalesPage />;
     case "pos":
       return <PosPage />;
+    case "job-cards":
+      return <JobCardsPage />;
     case "customers":
       return <AdminOnlyPage title="Customers" />;
     case "purchases":

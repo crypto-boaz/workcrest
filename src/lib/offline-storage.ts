@@ -2,6 +2,7 @@ import type { ApiProduct, ApiSale } from "@/lib/commerce-api";
 import type { DashboardSummary, ApiNotification } from "@/lib/commerce-api";
 import type { BusinessState } from "@/lib/business-types";
 import type { TenantBootstrap, TenantManifest } from "@/lib/platform-types";
+import type { JobCard } from "@/lib/job-cards-api";
 
 const DATABASE_NAME = "workcrest-offline-v1";
 const STORE = "records";
@@ -135,6 +136,34 @@ export const offlineStorage = {
     read<OfflineSalesSnapshot>(`sales-history:${scope}:${userId}`),
   getBusinessSnapshot: (scope: string, userId: string) =>
     read<OfflineBusinessSnapshot>(`business:${scope}:${userId}`),
+  getJobCards: (scope: string, userId: string) =>
+    read<OfflineSnapshot<JobCard[]>>(`job-cards:${scope}:${userId}`),
+  saveJobCards: async (scope: string, userId: string, cards: JobCard[]) => {
+    const database = await openDatabase();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(STORE, "readwrite");
+        const records = transaction.objectStore(STORE);
+        const key = `job-cards:${scope}:${userId}`;
+        const request = records.get(key);
+        request.onsuccess = () => {
+          const previous = request.result as OfflineSnapshot<JobCard[]> | undefined;
+          const incomingIds = new Set(cards.map((card) => card.id));
+          records.put({
+            value: [...cards, ...(previous?.value ?? []).filter((item) => !incomingIds.has(item.id))],
+            savedAt: new Date().toISOString(),
+          } satisfies OfflineSnapshot<JobCard[]>, key);
+        };
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    } finally {
+      database.close();
+    }
+  },
+  rememberJobCard: (scope: string, userId: string, card: JobCard) =>
+    offlineStorage.saveJobCards(scope, userId, [card]),
   rememberBusinessResources: async (
     scope: string,
     userId: string,

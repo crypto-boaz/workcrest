@@ -46,6 +46,7 @@ class Organization(UUIDTimeStampedModel):
     name = models.CharField(max_length=180)
     legal_name = models.CharField(max_length=220, blank=True)
     industry_code = models.CharField(max_length=40, default="commerce")
+    job_cards_enabled = models.BooleanField(default=False)
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.TRIAL
     )

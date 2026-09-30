@@ -18,6 +18,7 @@ export const navigation = [
   { label: "Products", href: "/products", icon: Boxes },
   { label: "Sales", href: "/sales", icon: ReceiptText },
   { label: "Point of sale", href: "/pos", icon: ShoppingCart },
+  { label: "Job cards", href: "/job-cards", icon: ClipboardList },
   { label: "Customers", href: "/customers", icon: Users },
   { label: "Purchases", href: "/purchases", icon: PackageOpen },
   { label: "Returns", href: "/returns", icon: RotateCcw },

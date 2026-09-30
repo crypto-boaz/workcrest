@@ -37,7 +37,9 @@ export function SidebarContent({
     signOut,
   } = usePlatform();
   const primaryNavigation: readonly NavigationItem[] = moduleEnabled("commerce")
-    ? offline ? navigation.filter((item) => isOfflineRoute(item.href)) : navigation
+    ? navigation.filter((item) =>
+        (item.href !== "/job-cards" || bootstrap.organization.job_cards_enabled) &&
+        (!offline || isOfflineRoute(item.href)))
     : [];
 
   const navItems = (items: readonly NavigationItem[]) =>

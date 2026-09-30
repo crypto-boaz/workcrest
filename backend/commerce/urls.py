@@ -7,6 +7,7 @@ from .views import (
     DashboardView,
     ExpenseViewSet,
     HeldCartViewSet,
+    JobCardViewSet,
     ProductViewSet,
     PurchaseOrderViewSet,
     ReportsView,
@@ -29,6 +30,7 @@ router.register("purchases", PurchaseOrderViewSet, basename="purchase")
 router.register("transfers", StockTransferViewSet, basename="transfer")
 router.register("expenses", ExpenseViewSet, basename="expense")
 router.register("held-carts", HeldCartViewSet, basename="held-cart")
+router.register("job-cards", JobCardViewSet, basename="job-card")
 router.register("stock-movements", StockMovementViewSet, basename="stock-movement")
 
 

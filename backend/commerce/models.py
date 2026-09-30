@@ -177,6 +177,71 @@ class DocumentSequence(LocationOwnedModel):
         ]
 
 
+class JobCard(LocationOwnedModel):
+    class Status(models.TextChoices):
+        RECEIVED = "received", "Received"
+        DIAGNOSING = "diagnosing", "Diagnosing"
+        AWAITING_APPROVAL = "awaiting_approval", "Awaiting approval"
+        IN_PROGRESS = "in_progress", "In progress"
+        READY = "ready", "Ready for collection"
+        COLLECTED = "collected", "Collected"
+        CANCELLED = "cancelled", "Cancelled"
+
+    number = models.CharField(max_length=40)
+    customer_name = models.CharField(max_length=180)
+    customer_phone = models.CharField(max_length=32)
+    device_name = models.CharField(max_length=180)
+    serial_number = models.CharField(max_length=120, blank=True)
+    reported_issue = models.TextField()
+    intake_condition = models.TextField(blank=True)
+    accessories = models.TextField(blank=True)
+    diagnosis = models.TextField(blank=True)
+    work_done = models.TextField(blank=True)
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.RECEIVED)
+    labour_charge = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
+    parts_charge = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
+    expected_at = models.DateField(null=True, blank=True)
+    received_at = models.DateTimeField(default=timezone.now)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    collected_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    version = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [models.UniqueConstraint(
+            fields=["organization", "number"], name="unique_job_card_number_per_org"
+        )]
+        indexes = [models.Index(fields=["organization", "location", "status", "-created_at"], name="comm_job_status_time_idx")]
+
+
+class JobCardPayment(LocationOwnedModel):
+    class Method(models.TextChoices):
+        CASH = "cash", "Cash"
+        CARD = "card", "Card"
+        TRANSFER = "transfer", "Transfer"
+
+    job_card = models.ForeignKey(JobCard, on_delete=models.PROTECT, related_name="payments")
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    method = models.CharField(max_length=16, choices=Method.choices)
+    reference = models.CharField(max_length=100, blank=True)
+    received_at = models.DateTimeField(default=timezone.now)
+    received_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ["created_at"]
+
+
+class JobCardEvent(LocationOwnedModel):
+    job_card = models.ForeignKey(JobCard, on_delete=models.PROTECT, related_name="events")
+    status = models.CharField(max_length=24, choices=JobCard.Status.choices)
+    note = models.CharField(max_length=500, blank=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ["created_at"]
+
+
 class Sale(LocationOwnedModel):
     class Status(models.TextChoices):
         HELD = "held", "Held"

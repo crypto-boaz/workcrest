@@ -31,12 +31,13 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "name",
             "legal_name",
             "industry_code",
+            "job_cards_enabled",
             "status",
             "timezone",
             "currency",
             "locale",
         ]
-        read_only_fields = ["id", "status"]
+        read_only_fields = ["id", "status", "job_cards_enabled"]
 
 
 class LocationSerializer(serializers.ModelSerializer):
@@ -164,6 +165,7 @@ class CompanySettingsSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=180)
     primary_color = serializers.CharField(max_length=7)
     currency = serializers.CharField(max_length=3)
+    job_cards_enabled = serializers.BooleanField(required=False)
     receipt_header = serializers.CharField(
         max_length=220, required=False, allow_blank=True
     )

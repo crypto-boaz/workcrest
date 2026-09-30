@@ -58,6 +58,7 @@ export interface TenantBootstrap {
     name: string;
     legal_name: string;
     industry_code: string;
+    job_cards_enabled?: boolean;
     status: string;
     timezone: string;
     currency: string;
@@ -107,6 +108,7 @@ export interface CompanySettingsInput {
   name: string;
   primary_color: string;
   currency: string;
+  job_cards_enabled: boolean;
   receipt_header: string;
   receipt_footer: string;
   address: {

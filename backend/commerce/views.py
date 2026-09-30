@@ -30,6 +30,9 @@ from .models import (
     Expense,
     HeldCart,
     InventoryBalance,
+    JobCard,
+    JobCardEvent,
+    JobCardPayment,
     Product,
     PurchaseOrder,
     ReturnRecord,
@@ -45,6 +48,8 @@ from .serializers import (
     CustomerSerializer,
     ExpenseSerializer,
     HeldCartSerializer,
+    JobCardPaymentInputSerializer,
+    JobCardSerializer,
     ProductSerializer,
     PurchaseOrderSerializer,
     ReturnRecordSerializer,
@@ -60,10 +65,12 @@ from .services import (
     dispatch_transfer,
     execute_idempotent,
     generate_internal_ean13,
+    next_document_number,
     process_return,
     receive_purchase,
     receive_transfer,
 )
+from .exceptions import ConflictError
 
 
 MONEY_FIELD = DecimalField(max_digits=18, decimal_places=2)
@@ -108,6 +115,114 @@ class CommerceViewSet(LocationContextMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(organization=self.organization, location=self.location)
+
+
+class JobCardViewSet(CommerceViewSet):
+    serializer_class = JobCardSerializer
+    http_method_names = ["get", "post", "patch", "head", "options"]
+    search_fields = ["number", "customer_name", "customer_phone", "device_name", "serial_number"]
+    filterset_fields = ["status"]
+    capability_map = {
+        "list": "sales.view", "retrieve": "sales.view",
+        "create": "sales.create", "partial_update": "sales.create",
+        "add_payment": "sales.create",
+    }
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if not self.organization.job_cards_enabled:
+            raise PermissionDenied("Job cards are not enabled for this company.")
+
+    def get_queryset(self):
+        return JobCard.objects.filter(
+            organization=self.organization, location=self.location
+        ).select_related("location").prefetch_related("payments", "events")
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        def create_card():
+            card = serializer.save(
+                organization=self.organization, location=self.location,
+                number=f"{self.location.code}-" + next_document_number(
+                    organization=self.organization, location=self.location,
+                    document_type=f"job_card_{timezone.localdate().year}", prefix=f"JC-{timezone.localdate().year}",
+                ),
+                created_by=request.user,
+            )
+            JobCardEvent.objects.create(
+                organization=self.organization, location=self.location,
+                job_card=card, status=card.status, actor=request.user,
+                note="Device received",
+            )
+            record_audit(organization=self.organization, location=self.location,
+                         actor=request.user, action="job_card.created", target=card, request=request)
+            return card
+        card, replayed = execute_idempotent(
+            organization=self.organization, scope=f"job_card.create.{self.location.id}",
+            key=request.headers.get("Idempotency-Key"), payload=request.data,
+            model=JobCard, callback=create_card,
+        )
+        card = self.get_queryset().get(pk=card.pk)
+        return Response(self.get_serializer(card).data,
+                        status=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED)
+
+    @transaction.atomic
+    def partial_update(self, request, *args, **kwargs):
+        card = get_object_or_404(self.get_queryset().select_for_update(), pk=kwargs["pk"])
+        try:
+            expected = int(request.data.get("expected_version"))
+        except (TypeError, ValueError):
+            raise ValidationError({"expected_version": "A current version is required."})
+        if expected != card.version:
+            raise ConflictError("This job card changed. Refresh it before saving.")
+        serializer = self.get_serializer(card, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        old_status = card.status
+        card = serializer.save(version=card.version + 1)
+        if card.status != old_status:
+            JobCardEvent.objects.create(
+                organization=self.organization, location=self.location,
+                job_card=card, status=card.status, actor=request.user,
+                note=str(request.data.get("status_note", ""))[:500],
+            )
+            if card.status == JobCard.Status.READY:
+                card.completed_at = timezone.now()
+            elif card.status == JobCard.Status.COLLECTED:
+                card.collected_at = timezone.now()
+            card.save(update_fields=["completed_at", "collected_at", "updated_at"])
+        record_audit(organization=self.organization, location=self.location,
+                     actor=request.user, action="job_card.updated", target=card,
+                     request=request, metadata={"fields": sorted(serializer.validated_data)})
+        return Response(self.get_serializer(self.get_queryset().get(pk=card.pk)).data)
+
+    @action(detail=True, methods=["post"], url_path="payments")
+    @transaction.atomic
+    def add_payment(self, request, pk=None):
+        payload = JobCardPaymentInputSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        def create_payment():
+            card = get_object_or_404(self.get_queryset().select_for_update(), pk=pk)
+            paid = sum((payment.amount for payment in card.payments.all()), Decimal("0"))
+            if payload.validated_data["amount"] > card.labour_charge + card.parts_charge - paid:
+                raise ValidationError({"amount": "Payment exceeds the balance due."})
+            payment = JobCardPayment.objects.create(
+                organization=self.organization, location=self.location,
+                job_card=card, received_by=request.user, **payload.validated_data,
+            )
+            record_audit(organization=self.organization, location=self.location,
+                         actor=request.user, action="job_card.payment_recorded",
+                         target=payment, request=request)
+            return payment
+        payment, replayed = execute_idempotent(
+            organization=self.organization, scope=f"job_card.payment.{pk}",
+            key=request.headers.get("Idempotency-Key"), payload=request.data,
+            model=JobCardPayment, callback=create_payment,
+        )
+        card = self.get_queryset().get(pk=payment.job_card_id)
+        return Response(self.get_serializer(card).data,
+                        status=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED)
 
 
 class CategoryViewSet(CommerceViewSet):

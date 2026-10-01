@@ -184,6 +184,36 @@ def test_product_create_response_includes_opening_stock_immediately(
     assert balance.quantity == Decimal("7.000")
 
 
+def test_dashboard_potential_sales_value_does_not_depend_on_product_cost(
+    tenant_pair,
+):
+    product = Product.objects.create(
+        organization=tenant_pair.organization_a,
+        location=tenant_pair.location_a,
+        name="Zero Cost Product",
+        sku="ZERO-COST-001",
+        selling_price=Decimal("2500.00"),
+        cost_price=Decimal("0.00"),
+    )
+    InventoryBalance.objects.create(
+        organization=tenant_pair.organization_a,
+        location=tenant_pair.location_a,
+        product=product,
+        quantity=Decimal("3.000"),
+    )
+    client = APIClient()
+    client.force_authenticate(tenant_pair.owner_a)
+    response = client.get(
+        f"/api/v1/locations/{tenant_pair.location_a.id}/dashboard/",
+        HTTP_X_TENANT_SLUG=tenant_pair.organization_a.slug,
+    )
+
+    assert response.status_code == 200
+    metrics = response.json()["metrics"]
+    assert Decimal(metrics["inventory_value"]) == Decimal("0.00")
+    assert Decimal(metrics["potential_sales_value"]) == Decimal("7500.00")
+
+
 def test_location_scoped_role_does_not_grant_other_location_access(tenant_pair):
     User = get_user_model()
     employee = User.objects.create_user(

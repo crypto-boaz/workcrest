@@ -143,9 +143,14 @@ export function ProductsPage() {
   const out = products.filter((product) => product.stock === 0).length;
 
   const refreshCatalog = () =>
-    queryClient.invalidateQueries({
-      queryKey: ["catalog-products", currentLocation.id],
-    });
+    Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["catalog-products", currentLocation.id],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["dashboard-summary", currentLocation.id],
+      }),
+    ]);
 
   const openCreate = () => {
     setEditing(null);

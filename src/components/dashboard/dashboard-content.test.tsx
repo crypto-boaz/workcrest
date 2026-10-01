@@ -41,7 +41,8 @@ describe("DashboardContent", () => {
     );
 
     await waitFor(
-      () => expect(screen.getByText("Inventory value")).toBeInTheDocument(),
+      () =>
+        expect(screen.getByText("Inventory value")).toBeInTheDocument(),
       { timeout: 1500 },
     );
 

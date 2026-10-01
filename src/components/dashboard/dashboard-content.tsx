@@ -96,10 +96,15 @@ function dashboardFromSummary(
       {
         key: "inventoryValue",
         label: "Inventory value",
-        value: Number(metrics.inventory_value),
+        value: Number(
+          metrics.potential_sales_value ?? metrics.inventory_value,
+        ),
         format: "currency",
         change: 0,
-        changeLabel: "live stock at cost",
+        changeLabel:
+          metrics.potential_sales_value === undefined
+            ? "live stock at cost"
+            : "on-hand stock at selling price",
       },
       {
         key: "todaysSales",
@@ -511,8 +516,8 @@ export function DashboardContent() {
     const todaySales = dashboardState.sales.filter(
       (sale) => new Date(sale.createdAt).getTime() >= startOfToday.getTime(),
     );
-    const inventoryValue = dashboardState.products.reduce(
-      (sum, product) => sum + product.cost * product.stock,
+    const potentialSalesValue = dashboardState.products.reduce(
+      (sum, product) => sum + product.price * product.stock,
       0,
     );
     const monthlyRevenue = monthSales.reduce(
@@ -555,10 +560,10 @@ export function DashboardContent() {
         {
           key: "inventoryValue",
           label: "Inventory value",
-          value: inventoryValue,
+          value: potentialSalesValue,
           format: "currency",
           change: 4.2,
-          changeLabel: "live stock at cost",
+          changeLabel: "on-hand stock at selling price",
         },
         {
           key: "todaysSales",

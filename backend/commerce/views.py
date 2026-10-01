@@ -1000,6 +1000,11 @@ class DashboardView(LocationContextMixin, APIView):
                 Value(Decimal("0")),
                 output_field=MONEY_FIELD,
             ),
+            potential_sales_value=Coalesce(
+                Sum(F("quantity") * F("product__selling_price")),
+                Value(Decimal("0")),
+                output_field=MONEY_FIELD,
+            ),
             units=Coalesce(
                 Sum("quantity"),
                 Value(Decimal("0")),
@@ -1078,6 +1083,7 @@ class DashboardView(LocationContextMixin, APIView):
                 "currency": self.organization.currency,
                 "metrics": {
                     "inventory_value": inventory["value"],
+                    "potential_sales_value": inventory["potential_sales_value"],
                     "inventory_units": inventory["units"],
                     "today_sales": today_sales["total"],
                     "today_transactions": today_sales["transactions"],

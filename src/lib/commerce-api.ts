@@ -11,6 +11,7 @@ export interface DashboardSummary {
   generated_at: string;
   metrics: {
     inventory_value: string;
+    potential_sales_value?: string;
     inventory_units: string;
     today_sales: string;
     today_transactions: number;

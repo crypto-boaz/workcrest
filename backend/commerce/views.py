@@ -199,7 +199,7 @@ class JobCardViewSet(CommerceViewSet):
 
     @action(detail=True, methods=["post"], url_path="payments")
     @transaction.atomic
-    def add_payment(self, request, pk=None):
+    def add_payment(self, request, pk=None, **kwargs):
         payload = JobCardPaymentInputSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         def create_payment():

@@ -119,13 +119,14 @@ class CommerceViewSet(LocationContextMixin, viewsets.ModelViewSet):
 
 class JobCardViewSet(CommerceViewSet):
     serializer_class = JobCardSerializer
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     search_fields = ["number", "customer_name", "customer_phone", "device_name", "serial_number"]
     filterset_fields = ["status"]
     capability_map = {
         "list": "sales.view", "retrieve": "sales.view",
         "create": "sales.create", "partial_update": "sales.create",
         "add_payment": "sales.create",
+        "destroy": "sales.create", "restore": "sales.create",
     }
 
     def initial(self, request, *args, **kwargs):
@@ -134,9 +135,49 @@ class JobCardViewSet(CommerceViewSet):
             raise PermissionDenied("Job cards are not enabled for this company.")
 
     def get_queryset(self):
-        return JobCard.objects.filter(
+        queryset = JobCard.objects.filter(
             organization=self.organization, location=self.location
         ).select_related("location").prefetch_related("payments", "events")
+        action = getattr(self, "action", None)
+        archived = action == "restore" or (
+            action in {"list", "retrieve"}
+            and self.request.query_params.get("archived") == "1"
+        )
+        return queryset.filter(archived_at__isnull=not archived)
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        if not request.membership or not request.membership.is_owner:
+            raise PermissionDenied("Only a company owner can delete job cards.")
+        card = get_object_or_404(self.get_queryset().select_for_update(), pk=kwargs["pk"])
+        card.archived_at = timezone.now()
+        card.version += 1
+        card.save(update_fields=["archived_at", "version", "updated_at"])
+        record_audit(
+            organization=self.organization, location=self.location,
+            actor=request.user, action="job_card.archived", target=card,
+            request=request, metadata={"number": card.number},
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def restore(self, request, **kwargs):
+        if not request.membership or not request.membership.is_owner:
+            raise PermissionDenied("Only a company owner can restore job cards.")
+        card = get_object_or_404(self.get_queryset().select_for_update(), pk=kwargs["pk"])
+        card.archived_at = None
+        card.version += 1
+        card.save(update_fields=["archived_at", "version", "updated_at"])
+        record_audit(
+            organization=self.organization, location=self.location,
+            actor=request.user, action="job_card.restored", target=card,
+            request=request, metadata={"number": card.number},
+        )
+        card = JobCard.objects.filter(
+            organization=self.organization, location=self.location,
+        ).select_related("location").prefetch_related("payments", "events").get(pk=card.pk)
+        return Response(self.get_serializer(card).data)
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):

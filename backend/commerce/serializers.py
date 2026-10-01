@@ -68,12 +68,12 @@ class JobCardSerializer(serializers.ModelSerializer):
             "device_name", "serial_number", "reported_issue", "intake_condition",
             "accessories", "diagnosis", "work_done", "status", "labour_charge",
             "parts_charge", "expected_at", "received_at", "completed_at",
-            "collected_at", "amount_paid", "total_charge", "balance_due",
+            "collected_at", "archived_at", "amount_paid", "total_charge", "balance_due",
             "payments", "events", "version", "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "number", "location_name", "received_at", "completed_at",
-            "collected_at", "version", "created_at", "updated_at",
+            "collected_at", "archived_at", "version", "created_at", "updated_at",
         ]
 
     def get_amount_paid(self, obj):

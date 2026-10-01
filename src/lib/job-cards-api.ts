@@ -24,6 +24,7 @@ export interface JobCard {
   received_at: string;
   completed_at: string | null;
   collected_at: string | null;
+  archived_at?: string | null;
   amount_paid: string;
   total_charge: string;
   balance_due: string;
@@ -57,11 +58,11 @@ interface JobCardPage {
 const base = (locationId: string) => `/api/v1/locations/${locationId}/job-cards/`;
 
 export const jobCardsApi = {
-  get: (locationId: string, cardId: string) =>
-    apiRequest<JobCard>(`${base(locationId)}${cardId}/`),
-  list: (locationId: string, search = "", nextUrl?: string) => {
+  get: (locationId: string, cardId: string, archived = false) =>
+    apiRequest<JobCard>(`${base(locationId)}${cardId}/${archived ? "?archived=1" : ""}`),
+  list: (locationId: string, search = "", nextUrl?: string, archived = false) => {
     const root = base(locationId);
-    if (!nextUrl) return apiRequest<JobCardPage>(`${root}?page_size=100&search=${encodeURIComponent(search)}`);
+    if (!nextUrl) return apiRequest<JobCardPage>(`${root}?page_size=100&search=${encodeURIComponent(search)}&archived=${archived ? "1" : "0"}`);
     const next = new URL(nextUrl, "https://workcrest.invalid");
     if (next.pathname !== root) throw new Error("Unexpected job card page address.");
     return apiRequest<JobCardPage>(next.pathname + next.search);
@@ -78,4 +79,8 @@ export const jobCardsApi = {
     secureApiRequest<JobCard>(`${base(locationId)}${cardId}/payments/`, {
       method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify(input),
     }),
+  archive: (locationId: string, cardId: string) =>
+    secureApiRequest<void>(`${base(locationId)}${cardId}/`, { method: "DELETE" }),
+  restore: (locationId: string, cardId: string) =>
+    secureApiRequest<JobCard>(`${base(locationId)}${cardId}/restore/`, { method: "POST" }),
 };

@@ -83,6 +83,8 @@ export function PosPage() {
   const [cashReceived, setCashReceived] = useState(0);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [heldOpen, setHeldOpen] = useState(false);
+  const [discardHeldId, setDiscardHeldId] = useState<string | null>(null);
+  const [discardingHeld, setDiscardingHeld] = useState(false);
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [cartProductCache, setCartProductCache] = useState<Record<string, Product>>({});
@@ -537,6 +539,31 @@ export function PosPage() {
     }
     setHeldOpen(false);
     showToast("Held sale resumed", undefined, "info");
+  };
+
+  const discardHeld = async () => {
+    if (!discardHeldId || (apiMode && !connectionOnline)) return;
+    setDiscardingHeld(true);
+    try {
+      if (apiMode) {
+        await commerceApi.deleteHeldCart(currentLocation.id, discardHeldId);
+        queryClient.setQueryData<Awaited<ReturnType<typeof commerceApi.heldCarts>>>(
+          ["held-carts", currentLocation.id],
+          (current) => current ? {
+            ...current,
+            results: current.results?.filter((held) => held.id !== discardHeldId),
+          } : current,
+        );
+        void apiHeldCartsQuery.refetch();
+      }
+      removeHeldSale(discardHeldId);
+      setDiscardHeldId(null);
+      showToast("Held sale discarded", undefined, "info");
+    } catch (error) {
+      showToast("Could not discard held sale", error instanceof Error ? error.message : "Try again.", "error");
+    } finally {
+      setDiscardingHeld(false);
+    }
   };
 
   return (
@@ -996,6 +1023,9 @@ export function PosPage() {
                   <Button size="sm" onClick={() => resumeHeld(held.id)}>
                     Resume
                   </Button>
+                  <Button size="sm" variant="danger" disabled={apiMode && !connectionOnline} onClick={() => setDiscardHeldId(held.id)}>
+                    <Trash2 className="size-3.5" />Discard
+                  </Button>
                 </div>
               );
             })
@@ -1011,6 +1041,11 @@ export function PosPage() {
             </div>
           )}
         </div>
+      </Modal>
+
+      <Modal open={Boolean(discardHeldId)} onOpenChange={(open) => !open && setDiscardHeldId(null)} title="Discard held sale" description="This removes the saved cart. No completed sale or payment is affected." size="sm">
+        <div className="p-5 text-sm">Discard this held sale? This action cannot be undone.</div>
+        <ModalFooter><Button variant="secondary" disabled={discardingHeld} onClick={() => setDiscardHeldId(null)}>Cancel</Button><Button variant="danger" disabled={discardingHeld} onClick={() => void discardHeld()}>{discardingHeld ? "Discarding…" : "Discard held sale"}</Button></ModalFooter>
       </Modal>
 
       <Modal

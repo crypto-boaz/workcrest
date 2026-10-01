@@ -138,6 +138,11 @@ export const offlineStorage = {
     read<OfflineBusinessSnapshot>(`business:${scope}:${userId}`),
   getJobCards: (scope: string, userId: string) =>
     read<OfflineSnapshot<JobCard[]>>(`job-cards:${scope}:${userId}`),
+  replaceJobCards: (scope: string, userId: string, cards: JobCard[]) =>
+    write(`job-cards:${scope}:${userId}`, {
+      value: cards,
+      savedAt: new Date().toISOString(),
+    } satisfies OfflineSnapshot<JobCard[]>),
   saveJobCards: async (scope: string, userId: string, cards: JobCard[]) => {
     const database = await openDatabase();
     try {
@@ -164,6 +169,14 @@ export const offlineStorage = {
   },
   rememberJobCard: (scope: string, userId: string, card: JobCard) =>
     offlineStorage.saveJobCards(scope, userId, [card]),
+  forgetJobCard: async (scope: string, userId: string, cardId: string) => {
+    const saved = await offlineStorage.getJobCards(scope, userId);
+    if (saved) {
+      await offlineStorage.replaceJobCards(
+        scope, userId, saved.value.filter((card) => card.id !== cardId),
+      );
+    }
+  },
   rememberBusinessResources: async (
     scope: string,
     userId: string,

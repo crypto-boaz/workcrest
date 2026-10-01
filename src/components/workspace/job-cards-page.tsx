@@ -167,7 +167,10 @@ export function JobCardsPage() {
       pendingPayment.current = null;
       replaceCard(card);
       setPayment({ amount: "", method: "cash", reference: "" });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not record payment."); }
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : "The payment request failed.";
+      setError(`${reason} Refresh this job card to check its payments before trying again.`);
+    }
     finally { setBusy(false); }
   }
 

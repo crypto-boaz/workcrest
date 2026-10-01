@@ -59,17 +59,22 @@ export class PlatformApiError extends Error {
       .filter(Boolean)
       .join(" ");
     const fieldErrorMessage = getFieldErrorMessage(payload);
+    const genericMessage = payload.request_id
+      ? `The request failed (HTTP ${status}, request ${payload.request_id}).`
+      : `The request failed (HTTP ${status}).`;
     super(
       (isEmailVerificationPending(payload)
         ? "Please verify your email address before signing in."
         : undefined) ??
         fieldErrorMessage ??
-        payload.message ??
+        (payload.message === "The request could not be completed."
+          ? genericMessage
+          : payload.message) ??
         payload.detail ??
         errorMessage ??
         (status === 429
           ? "Too many attempts. Wait a minute and try again."
-          : "The request could not be completed."),
+          : genericMessage),
     );
     this.name = "PlatformApiError";
     this.status = status;
@@ -82,7 +87,11 @@ async function parseResponse<T>(response: Response): Promise<T> {
     | T
     | ApiErrorPayload;
   if (!response.ok) {
-    throw new PlatformApiError(response.status, payload as ApiErrorPayload);
+    const errorPayload = payload && typeof payload === "object" && !Array.isArray(payload)
+      ? { ...payload } as ApiErrorPayload
+      : {} as ApiErrorPayload;
+    errorPayload.request_id ??= response.headers.get("X-Request-ID") ?? undefined;
+    throw new PlatformApiError(response.status, errorPayload);
   }
   return payload as T;
 }

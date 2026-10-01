@@ -13,6 +13,9 @@ def exception_handler(exc, context):
     if isinstance(detail, dict) and set(detail.keys()) == {"detail"}:
         message = str(detail["detail"])
         field_errors = {}
+    elif isinstance(detail, list):
+        message = " ".join(str(item) for item in detail) or "The request could not be completed."
+        field_errors = {}
     else:
         message = "The request could not be completed."
         field_errors = detail if isinstance(detail, dict) else {}

@@ -6,10 +6,10 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { usePlatform } from "@/components/platform-provider";
-import { navigation, secondaryNavigation } from "@/lib/navigation";
+import { tenantNavigation, secondaryNavigation } from "@/lib/navigation";
 import { isOfflineRoute } from "@/lib/offline-routes";
 
-const searchItems = [...navigation, ...secondaryNavigation];
+const searchItems = [...tenantNavigation, ...secondaryNavigation];
 
 export function CommandSearch({
   open,

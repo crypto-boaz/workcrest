@@ -147,7 +147,9 @@ export function ReportsPage() {
   }, [fromDate, sales, toDate, transactionQuery]);
 
   const exportReport = () =>
-    downloadCsv(`${bootstrap.organization.slug}-report.csv`, [
+    downloadCsv(`${bootstrap.organization.slug}-loaded-records-report.csv`, [
+      ["Data scope", "Records loaded on this device; totals may be incomplete"],
+      [],
       ["Metric", "Value"],
       ["Revenue", revenue],
       ["Gross profit", profit],
@@ -174,7 +176,11 @@ export function ReportsPage() {
 
   return (
     <Workspace>
-      {offline && <p role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">Offline report based on records saved on this device. Totals may be incomplete until reconnect.</p>}
+      <p role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+        {offline
+          ? "This report uses records saved on this device. Totals may be incomplete until reconnect."
+          : "This report uses recently loaded records, which may be only part of your company history. Totals and exports may be incomplete."}
+      </p>
       <PageHeader
         eyebrow="Business intelligence"
         title="Reports"
@@ -188,9 +194,9 @@ export function ReportsPage() {
             >
               <option value="7">Last 7 days</option>
               <option value="30">Last 30 days</option>
-              <option value="all">All records</option>
+              <option value="all">All loaded records</option>
             </Select>
-            <ExportButton onClick={exportReport} label="Export report" />
+            <ExportButton onClick={exportReport} label="Export loaded records" />
           </>
         }
       />
@@ -230,14 +236,14 @@ export function ReportsPage() {
             <div>
               <CardTitle>Revenue trend</CardTitle>
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Daily completed sales
+                Daily completed sales{period === "all" ? " · recent 45 days" : ""}
               </p>
             </div>
           </CardHeader>
           <CardContent>
             <div
               role="img"
-              aria-label={`Revenue chart for ${period === "all" ? "all records" : `the last ${period} days`}`}
+              aria-label={`Revenue chart for ${period === "all" ? "the last 45 days" : `the last ${period} days`}`}
               className="h-[320px]"
             >
               <ResponsiveContainer width="100%" height="100%">
@@ -588,13 +594,13 @@ export function SettingsPage() {
   const [password, setPassword] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [pendingAction, setPendingAction] = useState<
-    "settings" | "logo" | "remove-logo" | null
+    "settings" | "logo" | "remove-logo" | "job-cards" | null
   >(null);
+  const [pendingJobCardsEnabled, setPendingJobCardsEnabled] = useState<boolean | null>(null);
   const [form, setForm] = useState<CompanySettingsInput>(() => ({
     name: bootstrap.organization.name,
     primary_color: bootstrap.branding.primary_color,
     currency: bootstrap.organization.currency,
-    job_cards_enabled: Boolean(bootstrap.organization.job_cards_enabled),
     receipt_header: bootstrap.branding.receipt_header,
     receipt_footer: bootstrap.branding.receipt_footer,
     address: {
@@ -608,6 +614,24 @@ export function SettingsPage() {
   }));
   const isOwner = Boolean(bootstrap.membership?.is_owner);
   const canEdit = isOwner && !offline;
+  const jobCardsMutation = useMutation({
+    mutationFn: platformApi.setJobCardsEnabled,
+    onSuccess: (settings) => {
+      applyCompanySettings(settings);
+      setPendingJobCardsEnabled(null);
+    },
+    onError: (error, enabled) => {
+      if (
+        error instanceof PlatformApiError &&
+        error.status === 403 &&
+        error.message.toLowerCase().includes("reauthenticate")
+      ) {
+        setPendingAction("job-cards");
+        setPendingJobCardsEnabled(enabled);
+        setReauthOpen(true);
+      }
+    },
+  });
   const mutation = useMutation({
     mutationFn: platformApi.updateCompanySettings,
     onSuccess: (settings) => {
@@ -616,7 +640,6 @@ export function SettingsPage() {
         name: settings.organization.name,
         primary_color: settings.branding.primary_color,
         currency: settings.organization.currency,
-        job_cards_enabled: Boolean(settings.organization.job_cards_enabled),
         receipt_header: settings.branding.receipt_header,
         receipt_footer: settings.branding.receipt_footer,
         address: {
@@ -694,7 +717,10 @@ export function SettingsPage() {
       } else if (action === "remove-logo") {
         removeLogoMutation.reset();
         removeLogoMutation.mutate();
-      } else {
+      } else if (action === "job-cards" && pendingJobCardsEnabled !== null) {
+        jobCardsMutation.reset();
+        jobCardsMutation.mutate(pendingJobCardsEnabled);
+      } else if (action === "settings") {
         mutation.reset();
         mutation.mutate(form);
       }
@@ -719,6 +745,14 @@ export function SettingsPage() {
       ...current,
       address: { ...current.address, [key]: value },
     }));
+  };
+
+  const closeReauthentication = () => {
+    setReauthOpen(false);
+    setPassword("");
+    setPendingAction(null);
+    setPendingJobCardsEnabled(null);
+    reauthentication.reset();
   };
 
   return (
@@ -756,18 +790,21 @@ export function SettingsPage() {
             <label className="flex items-start gap-3 text-sm">
               <input
                 type="checkbox"
-                checked={form.job_cards_enabled}
-                disabled={!canEdit}
-                onChange={(event) => setForm({ ...form, job_cards_enabled: event.target.checked })}
+                checked={Boolean(bootstrap.organization.job_cards_enabled)}
+                disabled={!canEdit || jobCardsMutation.isPending}
+                onChange={(event) => jobCardsMutation.mutate(event.target.checked)}
                 className="mt-1 size-4"
               />
               <span>
                 <span className="block font-medium">Enable job cards</span>
                 <span className="block text-xs text-[var(--muted-foreground)]">
-                  Track gadget repairs, payments, status, and printable customer copies.
+                  Track gadget repairs, payments, status, and printable customer copies. This switch saves automatically.
                 </span>
               </span>
             </label>
+            {jobCardsMutation.isPending && <p role="status" className="mt-2 text-xs text-[var(--muted-foreground)]">Saving job card access…</p>}
+            {jobCardsMutation.error && !reauthOpen && <p role="alert" className="mt-2 text-xs text-red-600">{jobCardsMutation.error.message}</p>}
+            {bootstrap.organization.job_cards_enabled && <p className="mt-2 text-xs text-emerald-600">Job cards are enabled. <Link href="/job-cards" className="font-semibold underline">Open Job cards</Link> to create a repair job.</p>}
           </CardContent>
         </Card>
 
@@ -1046,7 +1083,7 @@ export function SettingsPage() {
 
         {canEdit && (
           <div className="flex justify-end">
-            <Button type="submit" disabled={mutation.isPending}>
+            <Button type="submit" disabled={mutation.isPending || jobCardsMutation.isPending}>
               <Save className="size-4" />
               {mutation.isPending ? "Saving…" : "Save company settings"}
             </Button>
@@ -1058,12 +1095,8 @@ export function SettingsPage() {
         open={reauthOpen}
         onOpenChange={(open) => {
           if (reauthentication.isPending) return;
-          setReauthOpen(open);
-          if (!open) {
-            setPassword("");
-            setPendingAction(null);
-            reauthentication.reset();
-          }
+          if (open) setReauthOpen(true);
+          else closeReauthentication();
         }}
         title="Confirm it’s you"
         description="Sensitive company changes require a recent password confirmation."
@@ -1103,7 +1136,7 @@ export function SettingsPage() {
               type="button"
               variant="secondary"
               disabled={reauthentication.isPending}
-              onClick={() => setReauthOpen(false)}
+              onClick={closeReauthentication}
             >
               Cancel
             </Button>

@@ -57,6 +57,8 @@ interface JobCardPage {
 const base = (locationId: string) => `/api/v1/locations/${locationId}/job-cards/`;
 
 export const jobCardsApi = {
+  get: (locationId: string, cardId: string) =>
+    apiRequest<JobCard>(`${base(locationId)}${cardId}/`),
   list: (locationId: string, search = "", nextUrl?: string) => {
     const root = base(locationId);
     if (!nextUrl) return apiRequest<JobCardPage>(`${root}?page_size=100&search=${encodeURIComponent(search)}`);

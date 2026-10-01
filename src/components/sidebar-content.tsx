@@ -8,7 +8,7 @@ import { usePathname } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { usePlatform } from "@/components/platform-provider";
 import { Button } from "@/components/ui/button";
-import { navigation, secondaryNavigation } from "@/lib/navigation";
+import { tenantNavigation, secondaryNavigation } from "@/lib/navigation";
 import { isOfflineRoute } from "@/lib/offline-routes";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +19,7 @@ interface SidebarContentProps {
 }
 
 type NavigationItem =
-  | (typeof navigation)[number]
+  | (typeof tenantNavigation)[number]
   | (typeof secondaryNavigation)[number];
 
 export function SidebarContent({
@@ -37,7 +37,7 @@ export function SidebarContent({
     signOut,
   } = usePlatform();
   const primaryNavigation: readonly NavigationItem[] = moduleEnabled("commerce")
-    ? navigation.filter((item) =>
+    ? tenantNavigation.filter((item) =>
         (item.href !== "/job-cards" || bootstrap.organization.job_cards_enabled) &&
         (!offline || isOfflineRoute(item.href)))
     : [];

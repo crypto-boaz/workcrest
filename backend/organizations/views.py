@@ -427,27 +427,29 @@ class CompanySettingsView(TenantContextMixin, APIView):
         serializer.is_valid(raise_exception=True)
         values = {**current, **serializer.validated_data}
 
-        organization.name = values["name"]
-        organization.job_cards_enabled = values["job_cards_enabled"]
-        organization.currency = values["currency"]
-        organization.save(update_fields=["name", "job_cards_enabled", "currency", "updated_at"])
+        changed = serializer.validated_data
+        organization_fields = []
+        for field in ("name", "currency", "job_cards_enabled"):
+            if field in changed:
+                setattr(organization, field, values[field])
+                organization_fields.append(field)
+        if organization_fields:
+            organization.save(update_fields=[*organization_fields, "updated_at"])
 
-        branding.display_name = values["name"]
-        branding.primary_color = values["primary_color"]
-        branding.receipt_header = values["receipt_header"]
-        branding.receipt_footer = values["receipt_footer"]
-        branding.save(
-            update_fields=[
-                "display_name",
-                "primary_color",
-                "receipt_header",
-                "receipt_footer",
-                "updated_at",
-            ]
-        )
+        branding_fields = []
+        if "name" in changed:
+            branding.display_name = values["name"]
+            branding_fields.append("display_name")
+        for field in ("primary_color", "receipt_header", "receipt_footer"):
+            if field in changed:
+                setattr(branding, field, values[field])
+                branding_fields.append(field)
+        if branding_fields:
+            branding.save(update_fields=[*branding_fields, "updated_at"])
 
-        location.address = values["address"]
-        location.save(update_fields=["address", "updated_at"])
+        if "address" in changed:
+            location.address = values["address"]
+            location.save(update_fields=["address", "updated_at"])
         record_audit(
             organization=organization,
             location=location,

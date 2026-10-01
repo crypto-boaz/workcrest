@@ -108,7 +108,6 @@ export interface CompanySettingsInput {
   name: string;
   primary_color: string;
   currency: string;
-  job_cards_enabled: boolean;
   receipt_header: string;
   receipt_footer: string;
   address: {

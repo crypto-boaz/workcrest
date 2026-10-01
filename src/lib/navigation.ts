@@ -32,6 +32,11 @@ export const secondaryNavigation = [
   { label: "Settings", href: "/settings", icon: SlidersHorizontal },
 ] as const;
 
+// These routes intentionally show the platform-owner restriction in tenant workspaces.
+export const tenantNavigation = navigation.filter(
+  (item) => item.href !== "/customers" && item.href !== "/purchases",
+);
+
 export const validSections = [
   ...navigation.filter((item) => item.href !== "/dashboard"),
   ...secondaryNavigation,

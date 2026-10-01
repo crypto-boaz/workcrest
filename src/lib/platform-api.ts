@@ -157,6 +157,16 @@ export const platformApi = {
       method: "PATCH",
       body: JSON.stringify(input),
     }),
+  setJobCardsEnabled: async (enabled: boolean) => {
+    const settings = await secureApiRequest<CompanySettingsResponse>("/api/v1/company-settings/", {
+      method: "PATCH",
+      body: JSON.stringify({ job_cards_enabled: enabled }),
+    });
+    if (settings.organization.job_cards_enabled !== enabled) {
+      throw new Error("Job cards were not saved. The backend may still be deploying; check Render and try again.");
+    }
+    return settings;
+  },
   uploadCompanyLogo: (logo: File) => {
     const body = new FormData();
     body.append("logo", logo);

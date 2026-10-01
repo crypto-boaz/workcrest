@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { ClipboardPlus, Printer } from "lucide-react";
+import { ClipboardPlus, Printer, RefreshCw } from "lucide-react";
 
 import { usePlatform } from "@/components/platform-provider";
 import { Button } from "@/components/ui/button";
@@ -63,13 +63,14 @@ export function JobCardsPage() {
   const [payment, setPayment] = useState({ amount: "", method: "cash", reference: "" });
   const pendingCreate = useRef<{ payload: string; key: string } | null>(null);
   const pendingPayment = useRef<{ payload: string; key: string } | null>(null);
+  const freshOnlineScope = useRef<string | null>(null);
   const scopedCards = useMemo(() => cardScope === scope ? cards : [], [cardScope, cards, scope]);
   const selected = scopedCards.find((card) => card.id === selectedId) ?? null;
 
   useEffect(() => {
     let cancelled = false;
     void offlineStorage.getJobCards(scope, userId).then((snapshot) => {
-      if (cancelled) return;
+      if (cancelled || (!offline && freshOnlineScope.current === scope)) return;
       setSelectedId(null);
       setCardScope(scope);
       setCards(snapshot?.value ?? []);
@@ -84,6 +85,7 @@ export function JobCardsPage() {
     const timer = window.setTimeout(() => {
       void jobCardsApi.list(currentLocation.id, search).then((page) => {
         if (cancelled) return;
+        freshOnlineScope.current = scope;
         setCardScope(scope);
         setCards(page.results);
         setNext(page.next);
@@ -169,6 +171,15 @@ export function JobCardsPage() {
     finally { setBusy(false); }
   }
 
+  async function refreshSelected() {
+    if (!selected || offline) return;
+    setBusy(true); setError("");
+    try {
+      replaceCard(await jobCardsApi.get(currentLocation.id, selected.id));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not refresh this job card."); }
+    finally { setBusy(false); }
+  }
+
   if (!bootstrap.organization.job_cards_enabled) {
     return <Workspace size="medium"><PageHeader title="Job cards" description="The company owner can enable repair services in Settings." /></Workspace>;
   }
@@ -211,7 +222,7 @@ export function JobCardsPage() {
           }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "Could not load more jobs.")).finally(() => setBusy(false));
         }}>Load more</Button>}
       </CardContent></Card>
-      {selected ? <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle>{selected.number} · {selected.device_name}</CardTitle><p className="mt-1 text-xs text-[var(--muted-foreground)]">{selected.customer_name} · {selected.customer_phone}</p></div><Button variant="secondary" onClick={() => window.print()}><Printer className="size-4" />Print card</Button></div></CardHeader><CardContent className="space-y-5">
+      {selected ? <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle>{selected.number} · {selected.device_name}</CardTitle><p className="mt-1 text-xs text-[var(--muted-foreground)]">{selected.customer_name} · {selected.customer_phone}</p></div><div className="flex gap-2">{!offline && <Button variant="secondary" disabled={busy} onClick={() => void refreshSelected()}><RefreshCw className="size-4" />Refresh</Button>}<Button variant="secondary" onClick={() => window.print()}><Printer className="size-4" />Print card</Button></div></div></CardHeader><CardContent className="space-y-5">
         <div className="grid gap-2 text-sm sm:grid-cols-3"><p>Status: <strong>{statusLabel(selected.status)}</strong></p><p>Received: {jobDate(selected.received_at)}</p><p>Expected: {selected.expected_at ? jobDate(selected.expected_at) : "Not set"}</p></div>
         <p className="whitespace-pre-wrap text-sm"><strong>Reported issue:</strong> {selected.reported_issue}</p>
         {canManage && !offline && <form onSubmit={(event) => void saveCard(event)} className="grid gap-3 border-t border-[var(--border)] pt-4 sm:grid-cols-2">
